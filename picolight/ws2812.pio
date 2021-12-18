@@ -1,0 +1,76 @@
+;
+; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+
+.program ws2812
+.side_set 1
+
+.define public T1 2
+.define public T2 5
+.define public T3 3
+
+.lang_opt python sideset_init = pico.PIO.OUT_HIGH
+.lang_opt python out_init     = pico.PIO.OUT_HIGH
+.lang_opt python out_shiftdir = 1
+
+.wrap_target
+bitloop:
+    out x, 1       side 0 [T3 - 1] ; Side-set still takes place when instruction stalls
+    jmp !x do_zero side 1 [T1 - 1] ; Branch on the bit we shifted out. Positive pulse
+do_one:
+    jmp  bitloop   side 1 [T2 - 1] ; Continue driving high, for a long pulse
+do_zero:
+    nop            side 0 [T2 - 1] ; Or drive low, for a short pulse
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+typedef struct ws2812pio_s {
+    PIO pio;
+    uint sm;
+    pio_sm_config config;
+    uint offset;
+} ws2812pio_t;
+
+static inline void ws2812_pin_init(ws2812pio_t *ws, uint pin)
+{
+    pio_gpio_init(ws->pio, pin);
+    pio_sm_set_consecutive_pindirs(ws->pio, ws->sm, pin, 1, true);
+}
+
+static inline void ws2812_pin_enable(ws2812pio_t *ws, uint pin)
+{
+    sm_config_set_sideset_pins(&(ws->config), pin);
+    pio_sm_init(ws->pio, ws->sm, ws->offset, &(ws->config));
+    pio_sm_set_enabled(ws->pio, ws->sm, true);
+}
+
+static inline void ws2812_quiesce(ws2812pio_t *ws)
+{
+    while (!pio_sm_is_tx_fifo_empty(ws->pio, ws->sm)) ; // NULL LOOP
+    sleep_us(40);
+    pio_sm_restart(ws->pio, ws->sm);
+}
+
+static inline void ws2812_program_init(ws2812pio_t *ws, PIO pio, uint sm, float freq)
+{
+    ws->pio = pio;
+    ws->sm = sm;
+    ws->offset = pio_add_program(pio, &ws2812_program);
+
+    ws->config = ws2812_program_get_default_config(ws->offset);
+    sm_config_set_out_shift(&(ws->config), false, true, 24);
+    sm_config_set_fifo_join(&(ws->config), PIO_FIFO_JOIN_TX);
+
+    int cycles_per_bit = ws2812_T1 + ws2812_T2 + ws2812_T3;
+    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);
+    sm_config_set_clkdiv(&(ws->config), div);
+
+//    pio_sm_init(ws->pio, ws->sm, ws->offset, &(ws->config));
+//    pio_sm_set_enabled(ws->pio, ws->sm, true);
+}
+%}
+
