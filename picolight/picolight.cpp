@@ -6,7 +6,9 @@
 // Set STUDIO to 0 for the living room installation
 // Set STUDIO to 1 for the studio (development) installation
 
+#ifndef STUDIO
 #define STUDIO 1
+#endif
 
 // Use this command to create archive
 // zip -r Lightshow.zip ./Lightshow -x '*.git*'
@@ -18,6 +20,7 @@
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
+#include "hardware/i2c.h"
 #include "ws2812.pio.h"
 
 #include "PicoNeoPixel.h"
@@ -141,6 +144,7 @@ enum {
 };
 
 #if STUDIO
+#pragma message "Building for STUDIO config"
 PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_SPOKE1] = { .pin = PORT_A4,   .length = 30 },         // SPOKE1
     [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
@@ -156,6 +160,7 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_RINGLETS] = { .pin = PORT_A7, .length = 128 },        // RINGLETS
 };
 #else
+#pragma message "Building for ART config"
 PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_SPOKE1] = { .pin = PORT_A2,   .length = 30 },         // SPOKE1
     [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
@@ -321,17 +326,6 @@ void setup()
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
 
-
-    //
-    // Set up the data port. 
-    //
-
-    #if 0
-    Serial3.begin(115200);
-    pinMode(PIN_DATA_AVAIL, INPUT);
-    pinMode(PIN_SEND_OK, OUTPUT);
-    digitalWrite(PIN_SEND_OK,0);
-    #endif
 
     //
     // Initialize all of the physical strips
@@ -535,9 +529,21 @@ void loop()
 
 
 }
+
+const char *build_date = __DATE__;
+
+extern void displayInit(void);
+
 int main()
 {
     stdio_init_all();
+
+    // Initialize the I2C interface
+    i2c_init(i2c_default, 400 * 1000);
+    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+
+    displayInit();
 
     setup();
     for (;;) {
