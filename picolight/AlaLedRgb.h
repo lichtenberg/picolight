@@ -5,6 +5,18 @@
 
 #include "PicoNeoPixel.h"
 
+// This represents a piece of a Neopixel Strip.  We can have more than
+// one AlaSubStrip associated with an AlaLedRgb to spread the actual
+// pixels out among a bunch of physical strips.
+typedef struct AlaSubStrip_s {
+    int startingLed;
+    int numLeds;
+    bool reverse;
+    Pico_NeoPixel *pixels;
+} AlaSubStrip;
+
+#define MAXSUBSTRIPS 8
+
 /**
  *  AlaLedRgb can be used to drive a single or multiple RGB leds to perform animations.
  */
@@ -16,13 +28,11 @@ public:
     AlaLedRgb();
 
     /**
-    * Initializes WS2812 LEDs. It be invoked in the setup() function of the main Arduino sketch.
-    *
-    * The type field can be used to set the RGB order and chipset frequency. Constants are ExtNeoPixel.h file.
-    * It is set by default to NEO_GRB + NEO_KHZ800.
+    * Initializes a substrip, adding set of LEDs from a physical strip to this AlaLedRgb
     */
-//    void initWS2812(int numLeds, byte pin, byte type=NEO_GRB+NEO_KHZ800);
-    void initSubStrip(int startingLed, int numLeds, Pico_NeoPixel *pixels);
+
+    void addSubStrip(int startingLed, int numLeds, bool reverse, Pico_NeoPixel *pixels);
+    void begin(void);
 
     /**
     * Sets the maximum brightness level.
@@ -55,6 +65,7 @@ public:
 private:
 
     void setAnimationFunc(int animation);
+    void stop();
     void on();
     void off();
     void blink();
@@ -100,10 +111,14 @@ private:
     void bouncingBalls();
     void bubbles();
 
-
+    // Logical Strip Info
     AlaColor *leds; // array to store leds brightness values
-    int startingLed; // Index of the first LED
-    int numLeds;    // number of leds
+
+    // Physical Strip Info
+    int numSubStrips;
+    AlaSubStrip subStrips[MAXSUBSTRIPS];
+
+    int numLeds;
 
     int animation;
     long speed;
@@ -122,11 +137,12 @@ private:
     unsigned long animStartTime;
     unsigned long animSeqStartTime;
     unsigned long lastRefreshTime;
+    unsigned long animSeqCount;
 
     float *pxPos;
     float *pxSpeed;
 
-    Pico_NeoPixel *neopixels;
+    bool findPixel(int idx, Pico_NeoPixel **strip, int *whichLed);
 
 };
 

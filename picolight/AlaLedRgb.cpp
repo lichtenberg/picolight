@@ -14,7 +14,6 @@ AlaLedRgb::AlaLedRgb()
     refreshMillis = 1000/50;
     pxPos = NULL;
     pxSpeed = NULL;
-    startingLed = 0;
     numLeds = 0;
     option = 0;
     direction = 0;
@@ -23,38 +22,49 @@ AlaLedRgb::AlaLedRgb()
     animSeqDuration = 0;
     animFunc = NULL;
     refreshRate = 0;
-    neopixels = NULL;
     leds = NULL;
+    numSubStrips = 0;
+    animSeqCount = 0;
+    animation = ALA_STOPSEQ;
 }
 
 
-void AlaLedRgb::initSubStrip(int startingLed, int numLeds, Pico_NeoPixel *pixels)
+void AlaLedRgb::addSubStrip(int startingLed, int numLeds, bool reverse, Pico_NeoPixel *pixels)
 {
-    this->numLeds = numLeds;
-    this->startingLed = startingLed;
+  if (numSubStrips == MAXSUBSTRIPS) {
+    return;
+  }
+
+  subStrips[numSubStrips].numLeds = numLeds;
+  subStrips[numSubStrips].startingLed = startingLed;
+  subStrips[numSubStrips].reverse = reverse;
+  subStrips[numSubStrips].pixels = pixels;
+  numSubStrips++;
+}
+
+void AlaLedRgb::begin(void)
+{
+    int total = 0;
+    int i;
+    AlaColor *ledStorage;
+
+    // Count up how many pixels we have in total.
+    for (i=0; i < numSubStrips; i++) {
+      total += subStrips[i].numLeds;
+    }
 
     // allocate and clear leds array
-    leds = (AlaColor *)malloc(3*numLeds);
-    memset(leds, 0, 3*numLeds);
+    ledStorage = (AlaColor *)malloc(3*total);
 
-    // Save reference to neopixel object
-    this->neopixels = pixels;
+    for (i = 0; i < total; i++) {
+        ledStorage[i] = 0;
+    }
+
+    leds = ledStorage;
+
+    // save the total
+    numLeds = total;
 }
-
-#if 0
-void AlaLedRgb::initWS2812(int numLeds, byte pin, byte type)
-{
-    this->numLeds = numLeds;
-
-    // allocate and clear leds array
-    leds = (AlaColor *)malloc(3*numLeds);
-    memset(leds, 0, 3*numLeds);
-
-    neopixels = new Adafruit_NeoPixel(numLeds, pin, type);
-
-    neopixels->begin();
-}
-#endif
 
 
 
@@ -102,6 +112,7 @@ void AlaLedRgb::forceAnimation(int animation, long speed, unsigned int direction
 
     setAnimationFunc(animation);
     animStartTime = MILLIS();
+    animSeqCount = 0;
 }
 
 void AlaLedRgb::setAnimation(int animation, long speed, unsigned int direction, unsigned int option, AlaPalette palette, AlaColor color)
@@ -117,6 +128,22 @@ void AlaLedRgb::setAnimation(int animation, long speed, unsigned int direction, 
 int AlaLedRgb::getAnimation()
 {
     return animation;
+}
+
+bool AlaLedRgb::findPixel(int idx, Pico_NeoPixel **strip, int *whichLed)
+{
+    int i;
+
+    for (i = 0; i < numSubStrips; i++) {
+        if (idx < subStrips[i].numLeds) {
+            *whichLed = (subStrips[i].reverse ? ((subStrips[i].numLeds-1) - idx) : idx) +
+                subStrips[i].startingLed;
+            *strip = subStrips[i].pixels;
+            return true;
+        }
+        idx = idx - subStrips[i].numLeds;
+    }
+    return false;
 }
 
 
@@ -143,14 +170,22 @@ bool AlaLedRgb::runAnimation()
     {
         // this is not really so smart...
         for(int i=0; i<numLeds; i++) {
+            Pico_NeoPixel *strip;
+            int whichLed;
             // If the direction is backwards, reverse the order that we fill in the pixels
             int ledidx = direction ? (numLeds-1-i) : i;
-            neopixels->setPixelColor(startingLed+ledidx, neopixels->Color((leds[i].r*maxOut.r)>>8, (leds[i].g*maxOut.g)>>8, (leds[i].b*maxOut.b)>>8));
+
+            if (findPixel(ledidx, &strip, &whichLed) == true) {
+                strip->setPixelColor(whichLed, strip->Color((leds[i].r*maxOut.r)>>8, (leds[i].g*maxOut.g)>>8, (leds[i].b*maxOut.b)>>8));
+            }
         }
 
         // We do not update the strips here anymore.
         //  neopixels->show();
     }
+
+    // keep track of how many times we have run the animation function
+    animSeqCount++;
 
     return true;
 }
@@ -163,6 +198,7 @@ void AlaLedRgb::setAnimationFunc(int animation)
 
     switch(animation)
     {
+        case ALA_STOP:                  animFunc = &AlaLedRgb::stop;                  break;
         case ALA_ON:                    animFunc = &AlaLedRgb::on;                    break;
         case ALA_OFF:                   animFunc = &AlaLedRgb::off;                   break;
         case ALA_BLINK:                 animFunc = &AlaLedRgb::blink;                 break;
@@ -213,12 +249,18 @@ void AlaLedRgb::setAnimationFunc(int animation)
 }
 
 
+void AlaLedRgb::stop()
+{
+    animation = ALA_STOPSEQ;
+}
+
 void AlaLedRgb::on()
 {
     for(int i=0; i<numLeds; i++)
     {
         leds[i] = palette.colors[0];
     }
+    animation = ALA_STOPSEQ;
 }
 
 void AlaLedRgb::off()
@@ -227,6 +269,9 @@ void AlaLedRgb::off()
     {
         leds[i] = 0x000000;
     }
+
+    // Have us stop.
+    animation = ALA_STOPSEQ;
 }
 
 
@@ -539,17 +584,25 @@ void AlaLedRgb::idleWhite()
     {
         leds[x] = c;
     }
+    animation = ALA_STOPSEQ;
 }
 
 void AlaLedRgb::soundPulse()
 {
-    float s = ((MILLIS()-animStartTime) >= (unsigned long) speed) ? 1.0 : getStepFloat(animStartTime, speed, 1);
+    bool isDone =  ((MILLIS()-animStartTime) >= (unsigned long) speed);
+    float s = (isDone) ? 1.0 : getStepFloat(animStartTime, speed, 1);
     AlaColor c = palette.colors[0].scale(1-s);
 
     for(int x=0; x<numLeds; x++)
     {
         leds[x] = c;
     }
+
+    // Stop our animation if we've run out the clock
+    if (isDone) {
+        animation = ALA_STOPSEQ;
+    }
+
 }
 
 void AlaLedRgb::onePixel()
@@ -564,6 +617,8 @@ void AlaLedRgb::onePixel()
     if (option < (unsigned int) numLeds) {
         leds[option] = c;
     }
+
+    animation = ALA_STOPSEQ;
 }
 
 void AlaLedRgb::pixelLine()
@@ -581,6 +636,8 @@ void AlaLedRgb::pixelLine()
     for(int x=0; x<pixlen; x++) {
         leds[x] = c;
     }
+
+    animation = ALA_STOPSEQ;    
 }
 
 void AlaLedRgb::grow()

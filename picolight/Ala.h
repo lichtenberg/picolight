@@ -42,6 +42,7 @@ static inline float constrain(float x, float a, float b)
 ////////////////////////////////////////////////////////////////////////////////
 // Animations
 
+#define ALA_STOP 100
 #define ALA_ON 101
 #define ALA_OFF 102
 #define ALA_BLINK 103

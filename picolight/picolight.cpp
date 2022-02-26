@@ -7,7 +7,7 @@
 // Set STUDIO to 1 for the studio (development) installation
 
 #ifndef STUDIO
-#define STUDIO 1
+#define STUDIO 0
 #endif
 
 // Use this command to create archive
@@ -91,12 +91,18 @@ static char blinky_onoff = 0;
     ********************************************************************* */
 
 #define MAXPHYSICALSTRIPS 12
-#define MAXLOGICALSTRIPS 19
+#define MAXLOGICALSTRIPS 31
 
 
 /*  *********************************************************************
     *  Global Variables
     ********************************************************************* */
+
+//
+// strip stack - specifies the order to run the animation renders
+//
+
+int stripStack[MAXLOGICALSTRIPS];
 
 //
 // This array contains the pin numbers that
@@ -140,8 +146,10 @@ enum {
     PHYS_RING,
     PHYS_TOP,
     PHYS_BOTTOM,
-    PHYS_RINGLETS
+    PHYS_RINGLETS,
+    PHYS_EOT = 0xFF
 };
+
 
 #if STUDIO
 #pragma message "Building for STUDIO config"
@@ -197,17 +205,23 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
 //
 
 
-#define ALLSTRIPS (((uint32_t)1 << MAXLOGICALSTRIPS)-1)
+//#define ALLSTRIPS (((uint32_t)1 << MAXLOGICALSTRIPS)-1)
+#define ALLSTRIPS (((uint32_t)1 << 19)-1)
 
 enum {
     LOG_SPOKE1 = 0, LOG_SPOKE2, LOG_SPOKE3, LOG_SPOKE4,
     LOG_SPOKE5, LOG_SPOKE6, LOG_SPOKE7, LOG_SPOKE8,
 
     LOG_RING,
-    LOG_TOP,
-    LOG_BOTTOM,
+    LOG_TOPHALF,
+    LOG_BOTTOMHALF,
     LOG_RINGLET1,LOG_RINGLET2,LOG_RINGLET3,LOG_RINGLET4,
     LOG_RINGLET5,LOG_RINGLET6,LOG_RINGLET7,LOG_RINGLET8,
+
+    LOG_TOP, LOG_RIGHT, LOG_BOTTOM, LOG_LEFT,
+
+    LOG_ULCORNER, LOG_URCORNER, LOG_LRCORNER, LOG_LLCORNER,
+    LOG_ULBOX, LOG_URBOX, LOG_LRBOX, LOG_LLBOX
 };
 
 //
@@ -215,37 +229,219 @@ enum {
 // LEFTSPOKES, RIGHTSPOKES, TOPSPOKES, BOTTOMSPOKES
 //
 
+typedef struct LogicalSubStrip_s {
+    uint8_t physical;
+    uint8_t startingLed;
+    uint8_t numLeds;
+    uint8_t reverse;
+} LogicalSubStrip_t;
 
 typedef struct LogicalStrip_s {
-    uint8_t     physical;               // which physical strip (index into array)
-    uint8_t     startingLed;            // starting LED within this strip
-    uint8_t     numLeds;                // number of LEDs (0 for whole strip)
+//    uint8_t     physical;               // which physical strip (index into array)
+//    uint8_t     startingLed;            // starting LED within this strip
+//    uint8_t     numLeds;                // number of LEDs (0 for whole strip)
+//    uint8_t     reverse;                // true if order is reversed
+    const LogicalSubStrip_t *subStrips;
     AlaLedRgb *alaStrip;                // ALA object we created.
 } LogicalStrip_t;
 
+
+//
+// Definitions of each logical strip
+//
+const LogicalSubStrip_t substrip_SPOKE1[] = {
+    {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE2[] = {
+    {.physical = PHYS_SPOKE2, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE3[] = {
+    {.physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE4[] = {
+    {.physical = PHYS_SPOKE4, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE5[] = {
+    {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE6[] = {
+    {.physical = PHYS_SPOKE6, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE7[] = {
+    {.physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_SPOKE8[] = {
+    {.physical = PHYS_SPOKE8, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_RING[] = {
+    {.physical = PHYS_RING, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TOPHALF[] = {
+    {.physical = PHYS_TOP, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_BOTTOMHALF[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_RINGLET1[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 0, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET2[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 16, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET3[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 32, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET4[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 48, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET5[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 64, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET6[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 80, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET7[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 96, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RINGLET8[] = {
+    {.physical = PHYS_RINGLETS, .startingLed = 112, .numLeds = 16, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+
+// Substrips: Edges of Perimeter
+
+const LogicalSubStrip_t substrip_LEFT[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 32, .reverse = 1},
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 30, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TOP[] = {
+    {.physical = PHYS_TOP, .startingLed = 30, .numLeds = 65, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RIGHT[] = {
+    {.physical = PHYS_TOP, .startingLed = 95, .numLeds = 30, .reverse = 0},
+    {.physical = PHYS_BOTTOM, .startingLed = 97, .numLeds = 32, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_BOTTOM[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 32, .numLeds = 65, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+
+// Substrips: Corners of Perimeter
+const LogicalSubStrip_t substrip_ULCORNER[] = {
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 63, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_URCORNER[] = {
+    {.physical = PHYS_TOP, .startingLed = 63, .numLeds = 62, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LRCORNER[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 66, .numLeds = 63, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LLCORNER[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 66, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+
+    
+// Substrips: Boxes
+const LogicalSubStrip_t substrip_ULBOX[] = {
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 63, .reverse = 0},
+    {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_URBOX[] = {
+    {.physical = PHYS_TOP,    .startingLed = 63, .numLeds = 62, .reverse = 0},
+    {.physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LRBOX[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 66, .numLeds = 63, .reverse = 1},
+    {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LLBOX[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 66, .reverse = 1},
+    {.physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+
 LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
-    // The spokes just consume the whole strips
-    [LOG_SPOKE1] = { .physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE2] = { .physical = PHYS_SPOKE2, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE3] = { .physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE4] = { .physical = PHYS_SPOKE4, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE5] = { .physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE6] = { .physical = PHYS_SPOKE6, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE7] = { .physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE8] = { .physical = PHYS_SPOKE8, .startingLed = 0, .numLeds = 0},
+    // Spokes
+    [LOG_SPOKE1] = { .subStrips = substrip_SPOKE1 },
+    [LOG_SPOKE2] = { .subStrips = substrip_SPOKE2 },
+    [LOG_SPOKE3] = { .subStrips = substrip_SPOKE3 },
+    [LOG_SPOKE4] = { .subStrips = substrip_SPOKE4 },
+    [LOG_SPOKE5] = { .subStrips = substrip_SPOKE5 },
+    [LOG_SPOKE6] = { .subStrips = substrip_SPOKE6 },
+    [LOG_SPOKE7] = { .subStrips = substrip_SPOKE7 },
+    [LOG_SPOKE8] = { .subStrips = substrip_SPOKE8 },
 
-    [LOG_RING] = { .physical = PHYS_RING, .startingLed = 0, .numLeds = 0},
-    [LOG_TOP]     = { .physical = PHYS_TOP, .startingLed = 0, .numLeds = 0},
-    [LOG_BOTTOM]  = { .physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 0},
-    [LOG_RINGLET1] = { .physical = PHYS_RINGLETS, .startingLed = 0, .numLeds = 16},
-    [LOG_RINGLET2] = { .physical = PHYS_RINGLETS, .startingLed = 16, .numLeds = 16},
-    [LOG_RINGLET3] = { .physical = PHYS_RINGLETS, .startingLed = 32, .numLeds = 16},
-    [LOG_RINGLET4] = { .physical = PHYS_RINGLETS, .startingLed = 48, .numLeds = 16},
+    // Ring
+    [LOG_RING]   = { .subStrips = substrip_RING },
 
-    [LOG_RINGLET5] = { .physical = PHYS_RINGLETS, .startingLed = 64, .numLeds = 16},
-    [LOG_RINGLET6] = { .physical = PHYS_RINGLETS, .startingLed = 80, .numLeds = 16},
-    [LOG_RINGLET7] = { .physical = PHYS_RINGLETS, .startingLed = 96, .numLeds = 16},
-    [LOG_RINGLET8] = { .physical = PHYS_RINGLETS, .startingLed = 112, .numLeds = 16},
+    // Top and bottom halves of the perimeter
+    [LOG_TOPHALF]    = { .subStrips = substrip_TOPHALF },
+    [LOG_BOTTOMHALF] = { .subStrips = substrip_BOTTOMHALF },
+
+    // Ringlets, all the rings are on one physical strip
+    [LOG_RINGLET1] = { .subStrips = substrip_RINGLET1 },
+    [LOG_RINGLET2] = { .subStrips = substrip_RINGLET2 },
+    [LOG_RINGLET3] = { .subStrips = substrip_RINGLET3 },
+    [LOG_RINGLET4] = { .subStrips = substrip_RINGLET4 },
+    [LOG_RINGLET5] = { .subStrips = substrip_RINGLET5 },
+    [LOG_RINGLET6] = { .subStrips = substrip_RINGLET6 },
+    [LOG_RINGLET7] = { .subStrips = substrip_RINGLET7 },
+    [LOG_RINGLET8] = { .subStrips = substrip_RINGLET8 },
+
+    // Horizontal and vertical edges of the perimeter
+    [LOG_TOP] = { .subStrips = substrip_TOP },
+    [LOG_RIGHT] = { .subStrips = substrip_RIGHT },
+    [LOG_BOTTOM] = { .subStrips = substrip_BOTTOM },
+    [LOG_LEFT] = { .subStrips = substrip_LEFT },
+
+    // Corners of the perimeter
+    [LOG_ULCORNER] = { .subStrips = substrip_ULCORNER },
+    [LOG_URCORNER] = { .subStrips = substrip_URCORNER },
+    [LOG_LRCORNER] = { .subStrips = substrip_LRCORNER },
+    [LOG_LLCORNER] = { .subStrips = substrip_LLCORNER },
+
+    // Boxes, combining perimeter corners and spokes
+    [LOG_ULBOX] = { .subStrips = substrip_ULBOX },
+    [LOG_URBOX] = { .subStrips = substrip_URBOX },
+    [LOG_LRBOX] = { .subStrips = substrip_LRBOX },
+    [LOG_LLBOX] = { .subStrips = substrip_LLBOX },
+
 };
 
 /*  *********************************************************************
@@ -268,6 +464,36 @@ AlaPalette alaPalGreen = { 1, alaPalGreen_ };
 AlaColor alaPalBlue_[] = { 0x0000FF };
 AlaPalette alaPalBlue = { 1, alaPalBlue_ };
 
+
+void pushStrip(int strip)
+{
+    int i;
+    
+    // First remove the strip from the stack
+
+    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
+        if (stripStack[i] == strip) {
+            break;
+        }
+    }
+
+    if (i != MAXLOGICALSTRIPS) {
+        // Move everyone else up
+        for (; i < MAXLOGICALSTRIPS-1; i++) {
+            stripStack[i] = stripStack[i+1];
+        }
+
+        // Since we removed one, put a -1 at the end in its place.
+        stripStack[MAXLOGICALSTRIPS-1] = -1;
+    }
+
+    // OK, now insert the new one at the top of the stack
+    for (i = MAXLOGICALSTRIPS-1; i > 0; i--) {
+        stripStack[i] = stripStack[i-1];
+    }
+    stripStack[0] = strip;
+}
+     
 
 
 
@@ -299,6 +525,7 @@ void setAnimation(uint32_t strips, int animation, int speed, unsigned int direct
         // allowing us to test (check) if that particular bit is set.
         if ((strips & ((uint32_t)1 << i)) != 0) {
             logicalStrips[i].alaStrip->forceAnimation(animation, speed, direction, option, palette, color);
+            pushStrip(i);
         }
     }
 }
@@ -342,28 +569,47 @@ void setup()
 
     // Now init the logical strips, but map them 1:1 to the physical ones.
     for (i = 0; i < MAXLOGICALSTRIPS; i++) {
+        const LogicalSubStrip_t *substrip;
         uint8_t startingLed, numLeds;
         // Create a new logical strip
         AlaLedRgb *alaLed = new AlaLedRgb;
         // If the logical strip's length is 0, it's the whole physical strip
         if (!alaLed) printf("Out of memory creating logical strips\n");
-        if (logicalStrips[i].numLeds == 0) {
-            startingLed = 0;
-            numLeds = physicalStrips[logicalStrips[i].physical].length;
-        } else {
-            startingLed = logicalStrips[i].startingLed;
-            numLeds = logicalStrips[i].numLeds;
+
+        substrip = logicalStrips[i].subStrips;
+
+        while (substrip->physical != PHYS_EOT) {
+            if (substrip->numLeds == 0) {
+                startingLed = 0;
+                numLeds = physicalStrips[substrip->physical].length;
+            } else {
+                startingLed = substrip->startingLed;
+                numLeds = substrip->numLeds;
+            }
+            alaLed->addSubStrip(startingLed,
+                                numLeds,
+                                substrip->reverse,
+                                physicalStrips[substrip->physical].neopixels);
+            substrip++;
         }
-        alaLed->initSubStrip(startingLed,
-                             numLeds,
-                             physicalStrips[logicalStrips[i].physical].neopixels);        
         logicalStrips[i].alaStrip = alaLed;
     }
 
-    
+    // OK, go back and "begin" all of the strips.  This allocates
+    // the underlying memory for the pixels.
+    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
+        logicalStrips[i].alaStrip->begin();
+    }
+
+    // Init the strip stack
+    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
+        stripStack[i] = -1;
+    }
+
     // By default, run the "idle white" animation on all strips.
     // We can change this later if we want the art exhibit to start quietly.
     setAnimation(ALLSTRIPS, ALA_IDLEWHITE, 1000, 0, 0, alaPalRgb, 0);
+
 
 }
 
@@ -518,9 +764,17 @@ void loop()
     // Run animations on all strips
     //
     // First compute new pixels on the LOGICAL Strips
+#if 0
+    for (i = MAXLOGICALSTRIPS-1; i >= 0; i--) {
+        if (stripStack[i] != -1) {
+            logicalStrips[stripStack[i]].alaStrip->runAnimation();
+        }
+    }
+#else
     for (i = 0; i < MAXLOGICALSTRIPS; i++) {
         logicalStrips[i].alaStrip->runAnimation();
     }
+#endif
 
     // Now send the data to the PHYSICAL strips
     for (i = 0; i < MAXPHYSICALSTRIPS; i++) {
