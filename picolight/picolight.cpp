@@ -63,6 +63,9 @@ typedef struct lsmessage_s {
 
 lsmessage_t message;
 
+extern int displayInit(void);
+extern int displayUpdate(void);
+
 
 ws2812pio_t wsp;
 
@@ -76,6 +79,7 @@ extern "C" {
 }
 
 static xtimer_t blinky_timer;
+static xtimer_t displayUpdateTimer;
 static char blinky_onoff = 0;
 
 #define PIN_LED 25
@@ -152,19 +156,19 @@ enum {
 
 
 #if STUDIO
-#pragma message "Building for STUDIO config"
+#pragma message "Building for MINI-ART config"
 PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
-    [PHYS_SPOKE1] = { .pin = PORT_A4,   .length = 30 },         // SPOKE1
-    [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
-    [PHYS_SPOKE3] = { .pin = PORT_A2,   .length = 30 },         // SPOKE3
-    [PHYS_SPOKE4] = { .pin = PORT_A1,   .length = 30 },         // SPOKE4
-    [PHYS_SPOKE5] = { .pin = PORT_B4,   .length = 30 },         // SPOKE5
+    [PHYS_SPOKE1] = { .pin = PORT_A1,   .length = 30 },         // SPOKE1
+    [PHYS_SPOKE2] = { .pin = PORT_A2,   .length = 30 },         // SPOKE2
+    [PHYS_SPOKE3] = { .pin = PORT_A3,   .length = 30 },         // SPOKE3
+    [PHYS_SPOKE4] = { .pin = PORT_B4,   .length = 30 },         // SPOKE4
+    [PHYS_SPOKE5] = { .pin = PORT_B2,   .length = 30 },         // SPOKE5
     [PHYS_SPOKE6] = { .pin = PORT_B3,   .length = 30 },         // SPOKE6
-    [PHYS_SPOKE7] = { .pin = PORT_B2,   .length = 30 },         // SPOKE7
-    [PHYS_SPOKE8] = { .pin = PORT_B1,   .length = 30 },         // SPOKE8
-    [PHYS_RING] =   { .pin = PORT_B5,   .length = 60 },         // RING
-    [PHYS_TOP]    = { .pin = PORT_B6,   .length = 130 },        // TOP
-    [PHYS_BOTTOM] = { .pin = PORT_B7,   .length = 130 },        // BOTTOM
+    [PHYS_SPOKE7] = { .pin = PORT_A4,   .length = 30 },         // SPOKE7
+    [PHYS_SPOKE8] = { .pin = PORT_A8,   .length = 30 },         // SPOKE8
+    [PHYS_RING] =   { .pin = PORT_A5,   .length = 60 },         // RING
+    [PHYS_TOP]    = { .pin = PORT_B5,   .length = 160 },        // TOP
+    [PHYS_BOTTOM] = { .pin = PORT_B6,   .length = 160 },        // BOTTOM
     [PHYS_RINGLETS] = { .pin = PORT_A7, .length = 128 },        // RINGLETS
 };
 #else
@@ -330,7 +334,73 @@ const LogicalSubStrip_t substrip_RINGLET8[] = {
 
 
 // Substrips: Edges of Perimeter
+#if STUDIO
+const LogicalSubStrip_t substrip_LEFT[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 40, .reverse = 1},
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 40, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TOP[] = {
+    {.physical = PHYS_TOP, .startingLed = 40, .numLeds = 80, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_RIGHT[] = {
+    {.physical = PHYS_TOP, .startingLed = 120, .numLeds = 40, .reverse = 0},
+    {.physical = PHYS_BOTTOM, .startingLed = 120, .numLeds = 40, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_BOTTOM[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 40, .numLeds = 80, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
 
+// Substrips: Corners of Perimeter
+const LogicalSubStrip_t substrip_ULCORNER[] = {
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 80, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_URCORNER[] = {
+    {.physical = PHYS_TOP, .startingLed = 80, .numLeds = 80, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LRCORNER[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 80, .numLeds = 80, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LLCORNER[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 80, .reverse = 1},
+    {.physical = PHYS_EOT}
+};
+
+    
+// Substrips: Boxes
+const LogicalSubStrip_t substrip_ULBOX[] = {
+    {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 80, .reverse = 0},
+    {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_URBOX[] = {
+    {.physical = PHYS_TOP,    .startingLed = 80, .numLeds = 80, .reverse = 0},
+    {.physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LRBOX[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 80, .numLeds = 80, .reverse = 1},
+    {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_LLBOX[] = {
+    {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 80, .reverse = 1},
+    {.physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0, .reverse = 1},
+    {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+
+#else
 const LogicalSubStrip_t substrip_LEFT[] = {
     {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 32, .reverse = 1},
     {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 30, .reverse = 0},
@@ -367,7 +437,6 @@ const LogicalSubStrip_t substrip_LLCORNER[] = {
     {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 66, .reverse = 1},
     {.physical = PHYS_EOT}
 };
-
     
 // Substrips: Boxes
 const LogicalSubStrip_t substrip_ULBOX[] = {
@@ -394,6 +463,7 @@ const LogicalSubStrip_t substrip_LLBOX[] = {
     {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 0},
     {.physical = PHYS_EOT}
 };
+#endif
 
 
 LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
@@ -649,6 +719,9 @@ void handleMessage(lsmessage_t *msgp)
     AlaPalette ap;
     AlaColor color = 0;
 
+    // 
+    TIMER_CLEAR(displayUpdateTimer);
+
     stripMask = msgp->ls_strips;
     animation = msgp->ls_anim;
     speed = msgp->ls_speed;
@@ -760,6 +833,12 @@ void loop()
 
     checkForMessage();
 
+    if (TIMER_EXPIRED(displayUpdateTimer)) {
+        displayInit();
+        displayUpdate();
+        TIMER_SET(displayUpdateTimer, 5000);
+    }
+
     //
     // Run animations on all strips
     //
@@ -786,7 +865,6 @@ void loop()
 
 const char *build_date = __DATE__;
 
-extern void displayInit(void);
 
 int main()
 {
@@ -798,8 +876,10 @@ int main()
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
 
     displayInit();
+    displayUpdate();
 
     setup();
+    TIMER_SET(displayUpdateTimer, 5000);
     for (;;) {
         loop();
     }
