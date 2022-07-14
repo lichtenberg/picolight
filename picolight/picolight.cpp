@@ -74,8 +74,9 @@ typedef struct lsmessage_s {
 
 lsmessage_t message;
 
-extern int displayInit(void);
+extern int displayInit(const char *name);
 extern int displayUpdate(void);
+
 
 
 ws2812pio_t wsp;
@@ -110,15 +111,24 @@ static char blinky_onoff = 0;
 #define MAXLOGICALSTRIPS 31
 #endif
 #if (TRIANGLES)
-#define MAXPHYSICALSTRIPS 4
-#define MAXLOGICALSTRIPS 4
+#define MAXPHYSICALSTRIPS 5
+#define MAXLOGICALSTRIPS 5
 #endif
-
 
 
 /*  *********************************************************************
     *  Global Variables
     ********************************************************************* */
+
+#if REALPANEL
+static const char *configName = "PANEL";
+#endif
+#if MINIPANEL
+static const char *configName = "MINI";
+#endif
+#if TRIANGLES
+static const char *configName = "TRIANGLE";
+#endif
 
 //
 // strip stack - specifies the order to run the animation renders
@@ -179,6 +189,7 @@ enum {
     PHYS_TRI2,
     PHYS_TRI3,
     PHYS_TRI4,
+    PHYS_NEON,
     PHYS_EOT = 0xFF
 };
 #endif
@@ -225,6 +236,7 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_TRI2] = { .pin = PORT_A2,   .length = 5 },
     [PHYS_TRI3] = { .pin = PORT_A3,   .length = 5 },
     [PHYS_TRI4] = { .pin = PORT_A4,   .length = 5 },
+    [PHYS_NEON] = { .pin = PORT_A5,   .length = 96 },
 };
 #endif
 
@@ -268,9 +280,9 @@ enum {
 };
 #endif
 #if TRIANGLES
-#define ALLSTRIPS (((uint32_t)1 << 4)-1)
+#define ALLSTRIPS (((uint32_t)1 << 5)-1)
 enum {
-    LOG_TRI1 = 0, LOG_TRI2, LOG_TRI3, LOG_TRI4
+    LOG_TRI1 = 0, LOG_TRI2, LOG_TRI3, LOG_TRI4, LOG_NEON
 };
 #endif
 
@@ -582,13 +594,18 @@ const LogicalSubStrip_t substrip_TRI4[] = {
     {.physical = PHYS_TRI4, .startingLed = 0, .numLeds = 0, .reverse = 0},
     {.physical = PHYS_EOT}
 };
+const LogicalSubStrip_t substrip_NEON[] = {
+    {.physical = PHYS_NEON, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
 
 LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
     // Spokes
     [LOG_TRI1] = { .subStrips = substrip_TRI1 },
     [LOG_TRI2] = { .subStrips = substrip_TRI2 },
-    [LOG_TRI3] = { .subStrips = substrip_TRI3},
+    [LOG_TRI3] = { .subStrips = substrip_TRI3 },
     [LOG_TRI4] = { .subStrips = substrip_TRI4 },
+    [LOG_NEON] = { .subStrips = substrip_NEON },
 };
 #endif
 
@@ -914,7 +931,7 @@ void loop()
     checkForMessage();
 
     if (TIMER_EXPIRED(displayUpdateTimer)) {
-        displayInit();
+        displayInit(configName);
         displayUpdate();
         TIMER_SET(displayUpdateTimer, 5000);
     }
@@ -955,7 +972,7 @@ int main()
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
 
-    displayInit();
+    displayInit(configName);
     displayUpdate();
 
     setup();
