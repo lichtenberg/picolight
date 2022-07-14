@@ -107,7 +107,6 @@ private:
     void movingBars();
     void movingGradient();
 
-    void fire();
     void bouncingBalls();
     void bubbles();
 

@@ -93,7 +93,6 @@ static inline float constrain(float x, float a, float b)
 #define ALA_PIXELSFADECOLORS 353
 #define ALA_FLAME 354
 
-#define ALA_FIRE 501
 #define ALA_BOUNCINGBALLS 502
 #define ALA_BUBBLES 503
 

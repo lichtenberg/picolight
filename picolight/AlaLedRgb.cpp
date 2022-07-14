@@ -239,7 +239,6 @@ void AlaLedRgb::setAnimationFunc(int animation)
         case ALA_FADECOLORS:            animFunc = &AlaLedRgb::fadeColors;            break;
         case ALA_FADECOLORSLOOP:        animFunc = &AlaLedRgb::fadeColorsLoop;        break;
 
-        case ALA_FIRE:                  animFunc = &AlaLedRgb::fire;                  break;
         case ALA_BOUNCINGBALLS:         animFunc = &AlaLedRgb::bouncingBalls;         break;
         case ALA_BUBBLES:               animFunc = &AlaLedRgb::bubbles;               break;
 
@@ -753,57 +752,6 @@ void AlaLedRgb::movingGradient()
 }
 
 
-/*******************************************************************************
-* FIRE
-* Porting of the famous Fire2012 effect by Mark Kriegsman.
-* Actually works at 50 Hz frame rate with up to 50 pixels.
-*******************************************************************************/
-void AlaLedRgb::fire()
-{
-    // COOLING: How much does the air cool as it rises?
-    // Less cooling = taller flames.  More cooling = shorter flames.
-    // Default 550
-    #define COOLING  600
-
-    // SPARKING: What chance (out of 255) is there that a new spark will be lit?
-    // Higher chance = more roaring fire.  Lower chance = more flickery fire.
-    // Default 120, suggested range 50-200.
-    #define SPARKING 120
-
-    // Array of temperature readings at each simulation cell
-    static uint8_t *heat = NULL;
-
-    // Initialize array if necessary
-    if (heat==NULL)
-        heat = (uint8_t *) malloc(numLeds);
-
-    // Step 1.  Cool down every cell a little
-    int rMax = (COOLING / numLeds) + 2;
-    for(int i=0; i<numLeds; i++)
-    {
-        heat[i] = max(((int)heat[i]) - RANDRANGE(0, rMax), 0);
-    }
-
-    // Step 2.  Heat from each cell drifts 'up' and diffuses a little
-    for(int k=numLeds-1; k>=3; k--)
-    {
-        heat[k] = ((int)heat[k - 1] + (int)heat[k - 2] + (int)heat[k - 3] ) / 3;
-    }
-
-    // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
-    if(RANDOM(255) < SPARKING)
-    {
-        int y = RANDOM(7);
-        heat[y] = min(heat[y] + RANDRANGE(160, 255), 255);
-    }
-
-    // Step 4.  Map from heat cells to LED colors
-    for(int j=0; j<numLeds; j++)
-    {
-        float colorindex = (float)(heat[j] * (palette.numColors-1) ) / 256;
-        leds[j] = palette.getPalColor(colorindex);
-    }
-}
 
 void AlaLedRgb::bouncingBalls()
 {
