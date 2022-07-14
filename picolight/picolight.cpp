@@ -3,12 +3,23 @@
 // (C) 2021 Mitch Lichtenberg (both of them).
 //
 
-// Set STUDIO to 0 for the living room installation
-// Set STUDIO to 1 for the studio (development) installation
-
-#ifndef STUDIO
-#define STUDIO 0
+#ifndef REALPANEL
+#define REALPANEL 0
 #endif
+
+#ifndef MINIPANEL
+#define MINIPANEL 0
+#endif
+
+#ifndef TRIANGLES
+#define TRIANGLES 1
+#endif
+
+
+#if (MINIPANEL + TRIANGLES + REALPANEL) != 1
+#error "You must define exactly one of MINIPANEL, TRIANGLES, REALPANEL"
+#endif
+
 
 // Use this command to create archive
 // zip -r Lightshow.zip ./Lightshow -x '*.git*'
@@ -94,8 +105,15 @@ static char blinky_onoff = 0;
     *  LED Strips
     ********************************************************************* */
 
+#if (REALPANEL || MINIPANEL)
 #define MAXPHYSICALSTRIPS 12
 #define MAXLOGICALSTRIPS 31
+#endif
+#if (TRIANGLES)
+#define MAXPHYSICALSTRIPS 4
+#define MAXLOGICALSTRIPS 4
+#endif
+
 
 
 /*  *********************************************************************
@@ -138,6 +156,7 @@ typedef struct PhysicalStrip_s {
     Pico_NeoPixel *neopixels;       // Neopixel object.
 } PhysicalStrip_t;
 
+#if (MINIPANEL || REALPANEL)
 enum {
     PHYS_SPOKE1 = 0,
     PHYS_SPOKE2,
@@ -153,9 +172,19 @@ enum {
     PHYS_RINGLETS,
     PHYS_EOT = 0xFF
 };
+#endif
+#if TRIANGLES
+enum {
+    PHYS_TRI1 = 0,
+    PHYS_TRI2,
+    PHYS_TRI3,
+    PHYS_TRI4,
+    PHYS_EOT = 0xFF
+};
+#endif
 
 
-#if STUDIO
+#if MINIPANEL
 #pragma message "Building for MINI-ART config"
 PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_SPOKE1] = { .pin = PORT_A1,   .length = 30 },         // SPOKE1
@@ -171,8 +200,9 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_BOTTOM] = { .pin = PORT_B6,   .length = 160 },        // BOTTOM
     [PHYS_RINGLETS] = { .pin = PORT_A7, .length = 128 },        // RINGLETS
 };
-#else
-#pragma message "Building for ART config"
+#endif
+#if REALPANEL
+#pragma message "Building for REALPANEL config"
 PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_SPOKE1] = { .pin = PORT_A2,   .length = 30 },         // SPOKE1
     [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
@@ -189,6 +219,14 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
 };
 #endif
 
+#if TRIANGLES
+PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
+    [PHYS_TRI1] = { .pin = PORT_A1,   .length = 5 },
+    [PHYS_TRI2] = { .pin = PORT_A2,   .length = 5 },
+    [PHYS_TRI3] = { .pin = PORT_A3,   .length = 5 },
+    [PHYS_TRI4] = { .pin = PORT_A4,   .length = 5 },
+};
+#endif
 
 //
 // OK, here are the "logical" strips, which can be composed from pieces of phyiscal strips.
@@ -210,8 +248,9 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
 
 
 //#define ALLSTRIPS (((uint32_t)1 << MAXLOGICALSTRIPS)-1)
-#define ALLSTRIPS (((uint32_t)1 << 19)-1)
 
+#if (MINIPANEL || REALPANEL)
+#define ALLSTRIPS (((uint32_t)1 << 19)-1)
 enum {
     LOG_SPOKE1 = 0, LOG_SPOKE2, LOG_SPOKE3, LOG_SPOKE4,
     LOG_SPOKE5, LOG_SPOKE6, LOG_SPOKE7, LOG_SPOKE8,
@@ -227,6 +266,14 @@ enum {
     LOG_ULCORNER, LOG_URCORNER, LOG_LRCORNER, LOG_LLCORNER,
     LOG_ULBOX, LOG_URBOX, LOG_LRBOX, LOG_LLBOX
 };
+#endif
+#if TRIANGLES
+#define ALLSTRIPS (((uint32_t)1 << 4)-1)
+enum {
+    LOG_TRI1 = 0, LOG_TRI2, LOG_TRI3, LOG_TRI4
+};
+#endif
+
 
 //
 // Additional sets we might want to define:
@@ -253,6 +300,7 @@ typedef struct LogicalStrip_s {
 //
 // Definitions of each logical strip
 //
+#if (MINIPANEL || REALPANEL)
 const LogicalSubStrip_t substrip_SPOKE1[] = {
     {.physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0, .reverse = 0},
     {.physical = PHYS_EOT}
@@ -334,7 +382,7 @@ const LogicalSubStrip_t substrip_RINGLET8[] = {
 
 
 // Substrips: Edges of Perimeter
-#if STUDIO
+#if MINIPANEL
 const LogicalSubStrip_t substrip_LEFT[] = {
     {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 40, .reverse = 1},
     {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 40, .reverse = 0},
@@ -398,9 +446,9 @@ const LogicalSubStrip_t substrip_LLBOX[] = {
     {.physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0, .reverse = 0},
     {.physical = PHYS_EOT}
 };
+#endif
 
-
-#else
+#if REALPANEL
 const LogicalSubStrip_t substrip_LEFT[] = {
     {.physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 32, .reverse = 1},
     {.physical = PHYS_TOP,    .startingLed = 0, .numLeds = 30, .reverse = 0},
@@ -464,8 +512,10 @@ const LogicalSubStrip_t substrip_LLBOX[] = {
     {.physical = PHYS_EOT}
 };
 #endif
+#endif
 
 
+#if (MINIPANEL || REALPANEL)
 LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
     // Spokes
     [LOG_SPOKE1] = { .subStrips = substrip_SPOKE1 },
@@ -513,6 +563,36 @@ LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
     [LOG_LLBOX] = { .subStrips = substrip_LLBOX },
 
 };
+#endif
+
+#if (TRIANGLES)
+const LogicalSubStrip_t substrip_TRI1[] = {
+    {.physical = PHYS_TRI1, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TRI2[] = {
+    {.physical = PHYS_TRI2, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TRI3[] = {
+    {.physical = PHYS_TRI3, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+const LogicalSubStrip_t substrip_TRI4[] = {
+    {.physical = PHYS_TRI4, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
+    // Spokes
+    [LOG_TRI1] = { .subStrips = substrip_TRI1 },
+    [LOG_TRI2] = { .subStrips = substrip_TRI2 },
+    [LOG_TRI3] = { .subStrips = substrip_TRI3},
+    [LOG_TRI4] = { .subStrips = substrip_TRI4 },
+};
+#endif
+
+
 
 /*  *********************************************************************
     *  Palettes
