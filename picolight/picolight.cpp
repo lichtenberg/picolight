@@ -4,7 +4,7 @@
 //
 
 #ifndef REALPANEL
-#define REALPANEL 0
+#define REALPANEL 1
 #endif
 
 #ifndef MINIPANEL
@@ -12,7 +12,7 @@
 #endif
 
 #ifndef TRIANGLES
-#define TRIANGLES 1
+#define TRIANGLES 0
 #endif
 
 
@@ -111,8 +111,8 @@ static char blinky_onoff = 0;
 #define MAXLOGICALSTRIPS 31
 #endif
 #if (TRIANGLES)
-#define MAXPHYSICALSTRIPS 5
-#define MAXLOGICALSTRIPS 5
+#define MAXPHYSICALSTRIPS 8
+#define MAXLOGICALSTRIPS 9
 #endif
 
 
@@ -189,7 +189,10 @@ enum {
     PHYS_TRI2,
     PHYS_TRI3,
     PHYS_TRI4,
-    PHYS_NEON,
+    PHYS_NEON1,
+    PHYS_NEON2,
+    PHYS_NEON3,
+    PHYS_NEON4,
     PHYS_EOT = 0xFF
 };
 #endif
@@ -236,7 +239,10 @@ PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
     [PHYS_TRI2] = { .pin = PORT_A2,   .length = 5 },
     [PHYS_TRI3] = { .pin = PORT_A3,   .length = 5 },
     [PHYS_TRI4] = { .pin = PORT_A4,   .length = 5 },
-    [PHYS_NEON] = { .pin = PORT_A5,   .length = 96 },
+    [PHYS_NEON1] = { .pin = PORT_A5,   .length = 96 },
+    [PHYS_NEON2] = { .pin = PORT_A6,   .length = 96 },
+    [PHYS_NEON3] = { .pin = PORT_A7,   .length = 96 },
+    [PHYS_NEON4] = { .pin = PORT_A8,   .length = 96 },
 };
 #endif
 
@@ -280,9 +286,11 @@ enum {
 };
 #endif
 #if TRIANGLES
-#define ALLSTRIPS (((uint32_t)1 << 5)-1)
+#define ALLSTRIPS (((uint32_t)1 << 9)-1)
 enum {
-    LOG_TRI1 = 0, LOG_TRI2, LOG_TRI3, LOG_TRI4, LOG_NEON
+    LOG_TRI1 = 0, LOG_TRI2, LOG_TRI3, LOG_TRI4,
+    LOG_NEON1, LOG_NEON2, LOG_NEON3, LOG_NEON4,
+    LOG_SMALLTRI
 };
 #endif
 
@@ -594,8 +602,29 @@ const LogicalSubStrip_t substrip_TRI4[] = {
     {.physical = PHYS_TRI4, .startingLed = 0, .numLeds = 0, .reverse = 0},
     {.physical = PHYS_EOT}
 };
-const LogicalSubStrip_t substrip_NEON[] = {
-    {.physical = PHYS_NEON, .startingLed = 0, .numLeds = 0, .reverse = 0},
+
+const LogicalSubStrip_t substrip_NEON1[] = {
+    {.physical = PHYS_NEON1, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_NEON2[] = {
+    {.physical = PHYS_NEON2, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_NEON3[] = {
+    {.physical = PHYS_NEON3, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_NEON4[] = {
+    {.physical = PHYS_NEON4, .startingLed = 0, .numLeds = 0, .reverse = 0},
+    {.physical = PHYS_EOT}
+};
+
+const LogicalSubStrip_t substrip_SMALLTRI[] = {
+    {.physical = PHYS_NEON2, .startingLed = 0, .numLeds = 10, .reverse = 0},
     {.physical = PHYS_EOT}
 };
 
@@ -605,7 +634,11 @@ LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
     [LOG_TRI2] = { .subStrips = substrip_TRI2 },
     [LOG_TRI3] = { .subStrips = substrip_TRI3 },
     [LOG_TRI4] = { .subStrips = substrip_TRI4 },
-    [LOG_NEON] = { .subStrips = substrip_NEON },
+    [LOG_NEON1] = { .subStrips = substrip_NEON1 },
+    [LOG_NEON2] = { .subStrips = substrip_NEON2 },
+    [LOG_NEON3] = { .subStrips = substrip_NEON3 },
+    [LOG_NEON4] = { .subStrips = substrip_NEON4 },
+    [LOG_SMALLTRI] = { .subStrips = substrip_SMALLTRI },
 };
 #endif
 
@@ -940,7 +973,7 @@ void loop()
     // Run animations on all strips
     //
     // First compute new pixels on the LOGICAL Strips
-#if 0
+#if 1
     for (i = MAXLOGICALSTRIPS-1; i >= 0; i--) {
         if (stripStack[i] != -1) {
             logicalStrips[stripStack[i]].alaStrip->runAnimation();
