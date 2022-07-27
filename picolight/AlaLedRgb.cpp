@@ -259,7 +259,7 @@ void AlaLedRgb::on()
     {
         leds[i] = palette.colors[0];
     }
-    animation = ALA_STOPSEQ;
+//    animation = ALA_STOPSEQ;
 }
 
 void AlaLedRgb::off()
