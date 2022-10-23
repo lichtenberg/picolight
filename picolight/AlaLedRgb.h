@@ -26,6 +26,7 @@ class AlaLedRgb
 public:
 
     AlaLedRgb();
+    ~AlaLedRgb();
 
     /**
     * Initializes a substrip, adding set of LEDs from a physical strip to this AlaLedRgb

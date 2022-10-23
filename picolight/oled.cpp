@@ -172,6 +172,7 @@ int displayInit(const char *name) {
 }
 
 int displayUpdate() {
+    bwbm_clear(oled_bitmap);
     bwbm_blttext(oled_bitmap,&font_GACHA_NO_10,0,0,banner,BWBM_MODE_AND);
     bwbm_blttext(oled_bitmap,&font_GACHA_NO_10,0,11,build_date,BWBM_MODE_REPLACE);
     

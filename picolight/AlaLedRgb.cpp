@@ -28,6 +28,26 @@ AlaLedRgb::AlaLedRgb()
     animation = ALA_STOPSEQ;
 }
 
+AlaLedRgb::~AlaLedRgb()
+{
+    // Free up the storage we allocated.
+
+    if (leds) {
+        free(leds);
+        leds = NULL;
+    }
+
+    if (pxPos != NULL) {
+        delete[] pxPos;
+        pxPos = NULL;
+    }
+
+    if (pxSpeed != NULL) {
+        delete[] pxSpeed;
+        pxSpeed = NULL;
+    }
+}
+
 
 void AlaLedRgb::addSubStrip(int startingLed, int numLeds, bool reverse, Pico_NeoPixel *pixels)
 {
