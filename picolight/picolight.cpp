@@ -730,6 +730,28 @@ void checkForMessage(void)
     }
 }
 
+void first_time_idle(void)
+{
+    int i;
+    // create a single physical strip of 256 LEDs.
+    Pico_NeoPixel *pixels = new Pico_NeoPixel(&wsp, PORT_A1, 256, NEO_GRB);
+
+    pixels->begin();
+    
+    for (i = 0; i < 256; i++) {
+        // Same color as IDLEWHITE
+        pixels->setPixelColor((uint16_t)i, 10, 10, 10);
+    }
+
+    for (i = 0; i < 16; i++) {
+        pixels->setPin(pinMap[i]);
+        pixels->show();
+    }
+
+    delete pixels;
+}
+
+
 void loop()
 {
     int i;
@@ -797,6 +819,7 @@ int main()
     displayUpdate();
 
     setup();
+    first_time_idle();
     TIMER_SET(displayUpdateTimer, 5000);
     for (;;) {
         loop();
