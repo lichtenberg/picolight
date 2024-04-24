@@ -47,27 +47,13 @@ Pico_NeoPixel::Pico_NeoPixel(ws2812pio_t *w, uint8_t p, uint16_t n, neoPixelType
   updateLength(n);
 }
 
-// via Michael Vogt/neophob: empty constructor is used when strand length
-// isn't known at compile-time; situations where program config might be
-// read from internal flash memory or an SD card, or arrive via serial
-// command.  If using this constructor, MUST follow up with updateType(),
-// updateLength(), etc. to establish the strand type, length and pin number!
-//Pico_NeoPixel::Pico_NeoPixel() :
-//  begun(false), numLEDs(0), numBytes(0), pin(-1), brightness(0), pixels(NULL),
-//  rOffset(1), gOffset(0), bOffset(2), wOffset(1), endTime(0)
-//{
-//}
 
 Pico_NeoPixel::~Pico_NeoPixel() {
   if(pixels)   free(pixels);
-//  if(pin >= 0) pinMode(pin, INPUT);
 }
 
 void Pico_NeoPixel::begin(void) {
-  if(pin >= 0) {
-//    pinMode(pin, OUTPUT);
-//    digitalWrite(pin, LOW);
-  }
+  // We no longer initialize pins here, since RPI Pico has its fancy GPIO thing
   begun = true;
 
 }

@@ -1,14 +1,9 @@
 //
 // PicoLight
-// (C) 2021 Mitch Lichtenberg (both of them).
+// (C) 2021,2022 Mitch Lichtenberg (both of them).
 //
 
-// Set STUDIO to 0 for the living room installation
-// Set STUDIO to 1 for the studio (development) installation
 
-#ifndef STUDIO
-#define STUDIO 1
-#endif
 
 // Use this command to create archive
 // zip -r Lightshow.zip ./Lightshow -x '*.git*'
@@ -28,41 +23,41 @@
 
 #include "xtimer.h"
 
-#define PAL_RGB         64
-#define PAL_RAINBOW     65
-#define PAL_RAINBOWSTRIPE 66
-#define PAL_PARTY       67
-#define PAL_HEAT        68
-#define PAL_FIRE        69
-#define PAL_COOL        70
-#define PAL_WHITE       71
-#define PAL_RED         80
-#define PAL_GREEN       82
-#define PAL_BLUE        84
-
-
 int debug = 0;
+
+/*  *********************************************************************
+    *  Global State
+    ********************************************************************* */
+
+#define GSTATE_INIT     0               // Need to program tables
+#define GSTATE_READY    1               // ready to play.
+
+int globalState = GSTATE_INIT;
+
+/*  *********************************************************************
+    *  Receive state machine
+    ********************************************************************* */
 
 #define MSGSIZE         16
 #define STATE_SYNC1     0
 #define STATE_SYNC2     1
-#define STATE_RX        2
+#define STATE_RXHDR     2
+#define STATE_RXDATA    3
 
 int rxstate = STATE_SYNC1;
-int rxcount = 0;
+unsigned int rxcount = 0;
+uint8_t *rxptr = NULL;
 
-typedef struct lsmessage_s {
-//    uint8_t     ls_sync[2];
-    uint16_t    ls_reserved;
-    uint16_t    ls_anim;
-    uint16_t    ls_speed;
-    uint16_t    ls_option;
-    uint32_t    ls_color;
-    uint32_t    ls_strips;
-} lsmessage_t;
+static const char *configName = "PICOLIGHT2";
+
+
+#include "picoprotocol.h"
 
 lsmessage_t message;
+lsmessage_t txMessage;
 
+extern int displayInit(const char *name);
+extern int displayUpdate(void);
 
 ws2812pio_t wsp;
 
@@ -75,28 +70,26 @@ extern "C" {
     volatile xtimer_t __now = 0;
 }
 
+/*  *********************************************************************
+    *  Blinky LED
+    ********************************************************************* */
+
 static xtimer_t blinky_timer;
+static xtimer_t displayUpdateTimer;
 static char blinky_onoff = 0;
 
 #define PIN_LED 25
-
-// Flow control for our special dual-Arduino setup that
-// uses a Pro Micro to process message the Uno to run the pixels
-#define PIN_DATA_AVAIL  8                 // input, '1' if there is data
-#define PIN_SEND_OK     9                 // output, '1' to send data
-
-
-/*  *********************************************************************
-    *  LED Strips
-    ********************************************************************* */
-
-#define MAXPHYSICALSTRIPS 12
-#define MAXLOGICALSTRIPS 19
 
 
 /*  *********************************************************************
     *  Global Variables
     ********************************************************************* */
+
+//
+// strip stack - specifies the order to run the animation renders
+//
+
+int8_t stripStack[MAXVSTRIPS];
 
 //
 // This array contains the pin numbers that
@@ -121,136 +114,63 @@ static char blinky_onoff = 0;
 #define PORT_B7         12
 #define PORT_B8         13
 
+// Maps the physical channel in the pstrip table to the pin# on the RP2040
+const static uint8_t pinMap[16] = {
+    PORT_A1, PORT_A2, PORT_A3, PORT_A4, PORT_A5, PORT_A6, PORT_A7, PORT_A8,
+    PORT_B1, PORT_B2, PORT_B3, PORT_B4, PORT_B5, PORT_B6, PORT_B7, PORT_B8
+};
+
+//
+// Physical strips, representing a string of neopixels attached to a given
+// port and pin on the RP2040.
+//
+
 // This struct describes a physical strip
 typedef struct PhysicalStrip_s {
     uint8_t pin;                        // Pin number for strips
-    uint8_t length;                     // Number of actual pixels
-    Pico_NeoPixel *neopixels;       // Neopixel object.
+    uint8_t flags;                      // Flags from the script
+    uint16_t length;                    // total # of pixels on strip
+    Pico_NeoPixel *neopixels;           // Neopixel object.
 } PhysicalStrip_t;
 
-enum {
-    PHYS_SPOKE1 = 0,
-    PHYS_SPOKE2,
-    PHYS_SPOKE3,
-    PHYS_SPOKE4,
-    PHYS_SPOKE5,
-    PHYS_SPOKE6,
-    PHYS_SPOKE7,
-    PHYS_SPOKE8,
-    PHYS_RING,
-    PHYS_TOP,
-    PHYS_BOTTOM,
-    PHYS_RINGLETS
-};
-
-#if STUDIO
-#pragma message "Building for STUDIO config"
-PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
-    [PHYS_SPOKE1] = { .pin = PORT_A4,   .length = 30 },         // SPOKE1
-    [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
-    [PHYS_SPOKE3] = { .pin = PORT_A2,   .length = 30 },         // SPOKE3
-    [PHYS_SPOKE4] = { .pin = PORT_A1,   .length = 30 },         // SPOKE4
-    [PHYS_SPOKE5] = { .pin = PORT_B4,   .length = 30 },         // SPOKE5
-    [PHYS_SPOKE6] = { .pin = PORT_B3,   .length = 30 },         // SPOKE6
-    [PHYS_SPOKE7] = { .pin = PORT_B2,   .length = 30 },         // SPOKE7
-    [PHYS_SPOKE8] = { .pin = PORT_B1,   .length = 30 },         // SPOKE8
-    [PHYS_RING] =   { .pin = PORT_B5,   .length = 60 },         // RING
-    [PHYS_TOP]    = { .pin = PORT_B6,   .length = 130 },        // TOP
-    [PHYS_BOTTOM] = { .pin = PORT_B7,   .length = 130 },        // BOTTOM
-    [PHYS_RINGLETS] = { .pin = PORT_A7, .length = 128 },        // RINGLETS
-};
-#else
-#pragma message "Building for ART config"
-PhysicalStrip_t physicalStrips[MAXPHYSICALSTRIPS] = {
-    [PHYS_SPOKE1] = { .pin = PORT_A2,   .length = 30 },         // SPOKE1
-    [PHYS_SPOKE2] = { .pin = PORT_A3,   .length = 30 },         // SPOKE2
-    [PHYS_SPOKE3] = { .pin = PORT_A4,   .length = 30 },         // SPOKE3
-    [PHYS_SPOKE4] = { .pin = PORT_B5,   .length = 30 },         // SPOKE4
-    [PHYS_SPOKE5] = { .pin = PORT_B6,   .length = 30 },         // SPOKE5
-    [PHYS_SPOKE6] = { .pin = PORT_B7,   .length = 30 },         // SPOKE6
-    [PHYS_SPOKE7] = { .pin = PORT_B8,   .length = 30 },         // SPOKE7
-    [PHYS_SPOKE8] = { .pin = PORT_A1,   .length = 30 },         // SPOKE8
-    [PHYS_RING] =   { .pin = PORT_A5,   .length = 60 },         // RING
-    [PHYS_TOP]    = { .pin = PORT_A6,   .length = 130 },        // TOP
-    [PHYS_BOTTOM] = { .pin = PORT_B4,   .length = 130 },        // BOTTOM
-    [PHYS_RINGLETS] = { .pin = PORT_A7, .length = 128 },        // RINGLETS
-};
-#endif
+// Declare our global array of physical strips
+PhysicalStrip_t physicalStrips[MAXPSTRIPS];
 
 
 //
 // OK, here are the "logical" strips, which can be composed from pieces of phyiscal strips.
-//
-
-//
-// Constants to define each spoke
-// These are "bit masks", meaning there is exactly one bit set in each of these
-// numbers.  By using a bit mask, we can conveniently represent sets of small numbers
-// by treating each bit to mean "I am in this set".
-//
-// So, if you have a binary nunber 00010111, then bits 0,1,2, and 4 are set.
-// You could therefore use the binary number 00010111, which is 11 in decimal,
-// to mean "the set of 0, 1, 2, and 4"
-//
-// Define some shorthands for sets of strips.  We can add as many
-// as we want here.
-//
-
-
-#define ALLSTRIPS (((uint32_t)1 << MAXLOGICALSTRIPS)-1)
-
-enum {
-    LOG_SPOKE1 = 0, LOG_SPOKE2, LOG_SPOKE3, LOG_SPOKE4,
-    LOG_SPOKE5, LOG_SPOKE6, LOG_SPOKE7, LOG_SPOKE8,
-
-    LOG_RING,
-    LOG_TOP,
-    LOG_BOTTOM,
-    LOG_RINGLET1,LOG_RINGLET2,LOG_RINGLET3,LOG_RINGLET4,
-    LOG_RINGLET5,LOG_RINGLET6,LOG_RINGLET7,LOG_RINGLET8,
-};
-
-//
-// Additional sets we might want to define:
-// LEFTSPOKES, RIGHTSPOKES, TOPSPOKES, BOTTOMSPOKES
+// We leave the 32-bit encoding of the logical strip info from the protocol
+// message, it's convient and compact.
 //
 
 
 typedef struct LogicalStrip_s {
-    uint8_t     physical;               // which physical strip (index into array)
-    uint8_t     startingLed;            // starting LED within this strip
-    uint8_t     numLeds;                // number of LEDs (0 for whole strip)
-    AlaLedRgb *alaStrip;                // ALA object we created.
+    uint32_t substrips[MAXSUBSTRIPS];        // Encoded subset of pixels
+    AlaLedRgb *alaStrip;                     // ALA object we created.
 } LogicalStrip_t;
 
-LogicalStrip_t logicalStrips[MAXLOGICALSTRIPS] = {
-    // The spokes just consume the whole strips
-    [LOG_SPOKE1] = { .physical = PHYS_SPOKE1, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE2] = { .physical = PHYS_SPOKE2, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE3] = { .physical = PHYS_SPOKE3, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE4] = { .physical = PHYS_SPOKE4, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE5] = { .physical = PHYS_SPOKE5, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE6] = { .physical = PHYS_SPOKE6, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE7] = { .physical = PHYS_SPOKE7, .startingLed = 0, .numLeds = 0},
-    [LOG_SPOKE8] = { .physical = PHYS_SPOKE8, .startingLed = 0, .numLeds = 0},
 
-    [LOG_RING] = { .physical = PHYS_RING, .startingLed = 0, .numLeds = 0},
-    [LOG_TOP]     = { .physical = PHYS_TOP, .startingLed = 0, .numLeds = 0},
-    [LOG_BOTTOM]  = { .physical = PHYS_BOTTOM, .startingLed = 0, .numLeds = 0},
-    [LOG_RINGLET1] = { .physical = PHYS_RINGLETS, .startingLed = 0, .numLeds = 16},
-    [LOG_RINGLET2] = { .physical = PHYS_RINGLETS, .startingLed = 16, .numLeds = 16},
-    [LOG_RINGLET3] = { .physical = PHYS_RINGLETS, .startingLed = 32, .numLeds = 16},
-    [LOG_RINGLET4] = { .physical = PHYS_RINGLETS, .startingLed = 48, .numLeds = 16},
+int logicalStripCount = 0;
+LogicalStrip_t logicalStrips[MAXVSTRIPS];
 
-    [LOG_RINGLET5] = { .physical = PHYS_RINGLETS, .startingLed = 64, .numLeds = 16},
-    [LOG_RINGLET6] = { .physical = PHYS_RINGLETS, .startingLed = 80, .numLeds = 16},
-    [LOG_RINGLET7] = { .physical = PHYS_RINGLETS, .startingLed = 96, .numLeds = 16},
-    [LOG_RINGLET8] = { .physical = PHYS_RINGLETS, .startingLed = 112, .numLeds = 16},
-};
+
 
 /*  *********************************************************************
     *  Palettes
     ********************************************************************* */
+
+
+#define PAL_RGB         64
+#define PAL_RAINBOW     65
+#define PAL_RAINBOWSTRIPE 66
+#define PAL_PARTY       67
+#define PAL_HEAT        68
+#define PAL_FIRE        69
+#define PAL_COOL        70
+#define PAL_WHITE       71
+#define PAL_RED         80
+#define PAL_GREEN       82
+#define PAL_BLUE        84
 
 // Special "None" palette used for passing direct colors in.
 AlaColor alaPalNone_[] = { 0 };
@@ -269,6 +189,36 @@ AlaColor alaPalBlue_[] = { 0x0000FF };
 AlaPalette alaPalBlue = { 1, alaPalBlue_ };
 
 
+void pushStrip(int strip)
+{
+    int i;
+    
+    // First remove the strip from the stack
+
+    for (i = 0; i < MAXVSTRIPS; i++) {
+        if (stripStack[i] == strip) {
+            break;
+        }
+    }
+
+    if (i != MAXVSTRIPS) {
+        // Move everyone else up
+        for (; i < MAXVSTRIPS-1; i++) {
+            stripStack[i] = stripStack[i+1];
+        }
+
+        // Since we removed one, put a -1 at the end in its place.
+        stripStack[MAXVSTRIPS-1] = -1;
+    }
+
+    // OK, now insert the new one at the top of the stack
+    for (i = MAXVSTRIPS-1; i > 0; i--) {
+        stripStack[i] = stripStack[i-1];
+    }
+    stripStack[0] = strip;
+}
+     
+
 
 
 /*  *********************************************************************
@@ -285,22 +235,167 @@ AlaPalette alaPalBlue = { 1, alaPalBlue_ };
     *  value.
     ********************************************************************* */
 
-void setAnimation(uint32_t strips, int animation, int speed, unsigned int direction,
+void setAnimation(uint32_t *strips, int animation, int speed, unsigned int direction,
                   unsigned int option, 
                   AlaPalette palette, AlaColor color)
 {
     int i;
 
-    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
+    for (i = 0; i < logicalStripCount; i++) {
         // the "1 << i" means "shift 1 by 'i' positions to the left.
         // So, if i has the value 3, 1<<3 will mean the value 00001000 (binary)
         // Next, the "&" operator is a bitwise AND - for each bit
         // in "strips" we will AND that bit with the correspondig bit in (1<<i).
         // allowing us to test (check) if that particular bit is set.
-        if ((strips & ((uint32_t)1 << i)) != 0) {
+        if ((logicalStrips[i].alaStrip != NULL) &&
+            ((strips[i/32] & ((uint32_t)1 << (i & 31))) != 0)) {
             logicalStrips[i].alaStrip->forceAnimation(animation, speed, direction, option, palette, color);
+            pushStrip(i);
         }
     }
+}
+
+/*  *********************************************************************
+    *  reset_all()
+    *  
+    *  Reset all of the physical and logical strip tables and
+    *  go back to the INIT state.
+    *  
+    *  Input parameters: 
+    *      nothing
+    *      
+    *  Return value:
+    *      nothing
+    ********************************************************************* */
+
+static void reset_all(void)
+{
+    int i;
+
+    if (globalState == GSTATE_INIT) {
+        return;
+    }
+           
+    // Erase all the logical strips
+
+    for (i = 0; i < MAXVSTRIPS; i++) {
+        if (logicalStrips[i].alaStrip) {
+            delete logicalStrips[i].alaStrip;
+            logicalStrips[i].alaStrip = NULL;
+            for (int j = 0; j < MAXSUBSTRIPS; j++) logicalStrips[i].substrips[j] = 0;
+        }
+    }
+
+    logicalStripCount = 0;
+
+    // Now erase the physical strips
+
+    for (i = 0; i < MAXPSTRIPS; i++) {
+        if (physicalStrips[i].neopixels) {
+            delete physicalStrips[i].neopixels;
+            physicalStrips[i].neopixels = NULL;
+            physicalStrips[i].length = 0;
+            physicalStrips[i].flags = 0;
+            physicalStrips[i].pin = 0;
+        }
+    }
+
+    globalState = GSTATE_INIT;
+}
+
+
+static void init_all(void)
+{
+    int i;
+    int ss;
+
+    if (globalState == GSTATE_READY) {
+        return;
+    }
+
+    displayInit("STARTING");
+    displayUpdate();
+
+    // Walk the physical strip table as uploaded from lightscript and
+    // instantiate the real strips.
+    for (i = 0; i < MAXPSTRIPS; i++) {
+        if (physicalStrips[i].length != 0) {
+            physicalStrips[i].neopixels =
+                new Pico_NeoPixel(&wsp, physicalStrips[i].pin, physicalStrips[i].length, NEO_GRB);
+            if (!physicalStrips[i].neopixels) {
+                displayInit("ERR1");
+                displayUpdate();
+                printf("Out of memory creating physcial strips\n");
+            }
+            physicalStrips[i].neopixels->begin();
+        }
+    }
+
+    // Now init the virtual strips.
+    for (i = 0; i < MAXVSTRIPS; i++) {
+        // Zero is not a valid encoded substrip, especially for the first substrip
+        // in a logical strip (this is because its length would be zero).  If we
+        // see this, then there's no strip here to init.
+        if (logicalStrips[i].substrips[0] == 0) {
+            continue;
+        }
+        // Create a new logical strip
+        AlaLedRgb *alaLed = new AlaLedRgb;
+        if (!alaLed) {
+            displayInit("ERR2");
+            displayUpdate();
+            printf("Out of memory creating logical strips\n");
+        }
+
+        for (ss = 0; ss < MAXSUBSTRIPS; ss++) {
+            // Get the encoded value of the substrip
+            uint32_t substrip = logicalStrips[i].substrips[ss];
+            uint32_t start = SUBSTRIP_START(substrip);
+            uint32_t count = SUBSTRIP_COUNT(substrip);
+            uint32_t reverse = SUBSTRIP_DIRECTION(substrip);
+            uint32_t chan = SUBSTRIP_CHAN(substrip);
+
+            // Just in case we blow it and pass in zero.
+            if (count != 0) {
+                alaLed->addSubStrip(start,
+                                    count,
+                                    reverse,
+                                    physicalStrips[chan].neopixels);
+            }
+
+            // Bail if the EOT flag is set.
+            if (SUBSTRIP_ISEOT(substrip)) {
+                break;
+            }
+            substrip++;
+        }
+        logicalStrips[i].alaStrip = alaLed;
+    }
+
+    // OK, go back and "begin" all of the strips.  This allocates
+    // the underlying memory for the pixels.
+    for (i = 0; i < MAXVSTRIPS; i++) {
+        if (logicalStrips[i].alaStrip) {
+            logicalStrips[i].alaStrip->begin();
+        } else {
+            break;
+        }
+    }
+
+    // When we get here, 'i' will be our total number of logical strips.
+    // In our main loop we don't necessarily want to walk all 128 table
+    // entries if we've only defined a few strips.
+    logicalStripCount = i;
+
+    // Init the strip stack
+    for (i = 0; i < MAXVSTRIPS; i++) {
+        stripStack[i] = -1;
+    }
+
+    displayInit("READY");
+    displayUpdate();
+    // Ready for action
+    globalState = GSTATE_READY;
 }
 
 
@@ -312,8 +407,6 @@ void setAnimation(uint32_t strips, int animation, int speed, unsigned int direct
 
 void setup()
 {
-    int i;
-
     //
     // Set up our "timer", which lets us check to see how much time
     // has passed.  We might not use it for much, but it is handy to have.
@@ -326,44 +419,20 @@ void setup()
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
 
-
-    //
-    // Initialize all of the physical strips
-    //
+    // Set up the Pico's programmable IO pins.
 
     ws2812_program_init(&wsp, pio0, 0, 800000);
-    
-    for (i = 0; i < MAXPHYSICALSTRIPS; i++) {
-        physicalStrips[i].neopixels =
-            new Pico_NeoPixel(&wsp, physicalStrips[i].pin, physicalStrips[i].length, NEO_GRB);
-        if (!physicalStrips[i].neopixels) printf("Out of memory creating physcial strips\n");
-        physicalStrips[i].neopixels->begin();
-    }
 
-    // Now init the logical strips, but map them 1:1 to the physical ones.
-    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
-        uint8_t startingLed, numLeds;
-        // Create a new logical strip
-        AlaLedRgb *alaLed = new AlaLedRgb;
-        // If the logical strip's length is 0, it's the whole physical strip
-        if (!alaLed) printf("Out of memory creating logical strips\n");
-        if (logicalStrips[i].numLeds == 0) {
-            startingLed = 0;
-            numLeds = physicalStrips[logicalStrips[i].physical].length;
-        } else {
-            startingLed = logicalStrips[i].startingLed;
-            numLeds = logicalStrips[i].numLeds;
-        }
-        alaLed->initSubStrip(startingLed,
-                             numLeds,
-                             physicalStrips[logicalStrips[i].physical].neopixels);        
-        logicalStrips[i].alaStrip = alaLed;
-    }
+    // Probably don't need to call reset_all() at power-on but...
 
+    reset_all();
     
+    // Initialize all of the physical strips
+
     // By default, run the "idle white" animation on all strips.
     // We can change this later if we want the art exhibit to start quietly.
-    setAnimation(ALLSTRIPS, ALA_IDLEWHITE, 1000, 0, 0, alaPalRgb, 0);
+    //setAnimation(ALLSTRIPS, ALA_IDLEWHITE, 1000, 0, 0, alaPalRgb, 0);
+
 
 }
 
@@ -380,38 +449,65 @@ static void blinky(void)
     if (TIMER_EXPIRED(blinky_timer)) {
         blinky_onoff = !blinky_onoff;
         gpio_put(PIN_LED, blinky_onoff);
-        TIMER_SET(blinky_timer,500);
+        if (globalState == GSTATE_INIT) {
+            TIMER_SET(blinky_timer,500);
+        } else {
+            TIMER_SET(blinky_timer,250);
+        }
+    }
+}
+
+static void sendMessage(lsmessage_t *msg)
+{
+    uint8_t *ptr;
+    int len;
+    
+    putchar(0x02);
+    putchar(0xAA);
+
+    ptr = (uint8_t *) msg;
+    len = LSMSG_HDRSIZE + (int) msg->ls_length;
+    while (len) {
+        putchar(*ptr);
+        ptr++;
+        len--;
     }
 }
 
 
-/*  *********************************************************************
-    *  loop()
-    *  
-    *  This is the main Arduino loop.  Handle characters 
-    *  received from the Basic Micro
-    ********************************************************************* */
-
-void handleMessage(lsmessage_t *msgp)
+static void sendStatusMessage(uint32_t status)
 {
+    txMessage.ls_command = LSCMD_STATUS;
+    txMessage.ls_length = sizeof(lsstatus_t);
+    txMessage.info.ls_status.ls_status = status;
 
-    uint32_t stripMask;
+    sendMessage(&txMessage);
+}
+
+
+
+static void handleAnimationMessage(lsmessage_t *msg)
+{
     int animation, speed;
     uint32_t palette;
     unsigned int direction;
     unsigned int option;
     AlaPalette ap;
     AlaColor color = 0;
+    lsanimate_t *amsg = &(msg->info.ls_animate);
 
-    stripMask = msgp->ls_strips;
-    animation = msgp->ls_anim;
-    speed = msgp->ls_speed;
+    // 
+    TIMER_CLEAR(displayUpdateTimer);
+
+    animation = amsg->la_anim;
+    speed     = amsg->la_speed;
     // Use the top bit fo the animation to indicate the direction.
     direction = (animation & 0x8000) ? 1 : 0;
     animation = (animation & 0x7FFF);
-    palette = msgp->ls_color;
-    option = msgp->ls_option;
+    palette   = amsg->la_color;
+    option    = amsg->la_option;
 
+    // Use bit 24 (after the 3 color values) to indicate the palette vs color.
     if (palette & 0x1000000) {
         ap = alaPalNone;
         color = (palette & 0x00FFFFFF);
@@ -454,14 +550,130 @@ void handleMessage(lsmessage_t *msgp)
         }
     }
 
-    setAnimation(stripMask, animation, speed, direction, option, ap, color);
+    setAnimation(&(amsg->la_strips[0]), animation, speed, direction, option, ap, color);
+
+    // No response is sent for this one.
     
 }
 
+static void handleBrightnessMessage(lsmessage_t *msg)
+{
+    // No response is sent for this one.
+}
+
+static void handleIdleMessage(lsmessage_t *msg)
+{
+    // No response is sent for this one.
+}
+                                    
+
+                                    
+static void handleVersionMessage(lsmessage_t *msg)
+{
+    txMessage.ls_command = LSCMD_VERSION;
+    txMessage.ls_length = sizeof(lsversion_t);
+    txMessage.info.ls_version.lv_protocol = 2;
+    txMessage.info.ls_version.lv_major = 2;
+    txMessage.info.ls_version.lv_minor = 0;
+    txMessage.info.ls_version.lv_eco = 0;
+    sendMessage(&txMessage);
+}
+                                    
+static void handleStatusMessage(lsmessage_t *msg)
+{
+    sendStatusMessage(0);
+}
+                                    
+static void handleResetMessage(lsmessage_t *msg)
+{
+    reset_all();
+    sendStatusMessage(0);
+}
+
+static void handleSetVStripMessage(lsmessage_t *msg)
+{
+    lsvstrip_t *vstrip = &(msg->info.ls_vstrip);
+    uint32_t count = vstrip->lv_count;
+
+    if (vstrip->lv_idx > MAXVSTRIPS) {
+        sendStatusMessage(0xFFFFFFFF);
+        return;
+    }
+
+    if (count > MAXSUBSTRIPS) count = MAXSUBSTRIPS;
+    if (count == 0) {
+        sendStatusMessage(0xFFFFFFFF);
+        return;
+    }
+
+    memcpy(&(logicalStrips[vstrip->lv_idx].substrips), vstrip->lv_substrips, count*sizeof(uint32_t));
+
+    // Terminate the strip list if it is not already.
+    logicalStrips[vstrip->lv_idx].substrips[count-1] |= ENCODESUBSTRIP(0,0,0,SUBSTRIP_EOT);
+    
+    sendStatusMessage(0);
+}
+
+static void handleSetPStripMessage(lsmessage_t *msg)
+{
+    uint32_t info = msg->info.ls_pstrip.lp_pstrip;
+    uint32_t chan = PSTRIP_CHAN(info);
+    uint32_t flags = PSTRIP_TYPE(info);
+    uint32_t count = PSTRIP_COUNT(info);
+
+    physicalStrips[chan].pin = pinMap[chan];
+    physicalStrips[chan].flags = flags;
+    physicalStrips[chan].length = count;
+
+    sendStatusMessage(0);
+}
+
+static void handleInitMessage(lsmessage_t *msg)
+{
+    init_all();
+    sendStatusMessage(0);
+}
+                                    
+
+
+static void handleMessage(lsmessage_t *msg)
+{
+    switch (msg->ls_command) {
+        case LSCMD_ANIMATE:
+            handleAnimationMessage(msg);
+            break;
+        case LSCMD_BRIGHTNESS:
+            handleBrightnessMessage(msg);
+            break;
+        case LSCMD_IDLE:
+            handleIdleMessage(msg);
+            break;
+        case LSCMD_VERSION:
+            handleVersionMessage(msg);
+            break;
+        case LSCMD_STATUS:
+            handleStatusMessage(msg);
+            break;
+        case LSCMD_RESET:
+            handleResetMessage(msg);
+            break;
+        case LSCMD_SETPSTRIP:
+            handleSetPStripMessage(msg);
+            break;
+        case LSCMD_SETVSTRIP:
+            handleSetVStripMessage(msg);
+            break;
+        case LSCMD_INIT:
+            handleInitMessage(msg);
+            break;
+        default:
+            break;
+    }
+
+}
 
 void checkForMessage(void)
 {
-    uint8_t *msgPtr = (uint8_t *) &message;
     int c;
     unsigned char b;
 
@@ -475,21 +687,41 @@ void checkForMessage(void)
 
         switch (rxstate) {
             case STATE_SYNC1: 
-                if (b == 0x02) rxstate = STATE_SYNC2;
+                if (b == 0x02) {
+                    rxstate = STATE_SYNC2;
+                }
                 break;
             case STATE_SYNC2:
                 if (b == 0xAA) {
-                    rxcount = 0;
-                    rxstate = STATE_RX;
+                    rxptr = (uint8_t *) &message;
+                    rxcount = LSMSG_HDRSIZE;
+                    rxstate = STATE_RXHDR;
                 }
                 else {
                     rxstate = STATE_SYNC1;
                 }
                 break;
-            case STATE_RX:
-                msgPtr[rxcount] = b;
-                rxcount++;
-                if (rxcount == MSGSIZE) {
+            case STATE_RXHDR:
+                *rxptr++ = b;
+                rxcount--;
+                if (rxcount == 0) {
+                    rxstate = STATE_RXDATA;
+                    rxcount = message.ls_length;
+                    // Sanity check, should not be needed.
+                    if (rxcount > sizeof(message.info)) {
+                        rxcount = sizeof(message.info);
+                        }
+                    if (rxcount == 0) {
+                        // Handle the case of no payload
+                        handleMessage(&message);
+                        rxstate = STATE_SYNC1;
+                    }
+                }
+                break;
+            case STATE_RXDATA:
+                *rxptr++ = b;
+                rxcount--;
+                if (rxcount == 0) {
                     rxstate = STATE_SYNC1;
                     handleMessage(&message);
                 }
@@ -497,6 +729,28 @@ void checkForMessage(void)
         }
     }
 }
+
+void first_time_idle(void)
+{
+    int i;
+    // create a single physical strip of 256 LEDs.
+    Pico_NeoPixel *pixels = new Pico_NeoPixel(&wsp, PORT_A1, 256, NEO_GRB);
+
+    pixels->begin();
+    
+    for (i = 0; i < 256; i++) {
+        // Same color as IDLEWHITE
+        pixels->setPixelColor((uint16_t)i, 10, 10, 10);
+    }
+
+    for (i = 0; i < 16; i++) {
+        pixels->setPin(pinMap[i]);
+        pixels->show();
+    }
+
+    delete pixels;
+}
+
 
 void loop()
 {
@@ -514,17 +768,36 @@ void loop()
 
     checkForMessage();
 
+    if (TIMER_EXPIRED(displayUpdateTimer)) {
+        displayInit(configName);
+        displayUpdate();
+        TIMER_SET(displayUpdateTimer, 5000);
+    }
+
     //
     // Run animations on all strips
     //
-    // First compute new pixels on the LOGICAL Strips
-    for (i = 0; i < MAXLOGICALSTRIPS; i++) {
-        logicalStrips[i].alaStrip->runAnimation();
-    }
 
-    // Now send the data to the PHYSICAL strips
-    for (i = 0; i < MAXPHYSICALSTRIPS; i++) {
-        physicalStrips[i].neopixels->show();
+    if (globalState == GSTATE_READY) {
+        // First compute new pixels on the LOGICAL Strips
+#if 0
+        for (i = logicalStripCount-1; i >= 0; i--) {
+            if (stripStack[i] != -1) {
+                logicalStrips[stripStack[i]].alaStrip->runAnimation();
+            }
+        }
+#else
+        for (i = 0; i < logicalStripCount; i++) {
+            logicalStrips[i].alaStrip->runAnimation();
+        }
+#endif
+
+        // Now send the data to the PHYSICAL strips
+        for (i = 0; i < MAXPSTRIPS; i++) {
+            if (physicalStrips[i].neopixels != NULL) {
+                physicalStrips[i].neopixels->show();
+            }
+        }
     }
 
 
@@ -532,7 +805,6 @@ void loop()
 
 const char *build_date = __DATE__;
 
-extern void displayInit(void);
 
 int main()
 {
@@ -543,9 +815,12 @@ int main()
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
 
-    displayInit();
+    displayInit(configName);
+    displayUpdate();
 
     setup();
+    first_time_idle();
+    TIMER_SET(displayUpdateTimer, 5000);
     for (;;) {
         loop();
     }

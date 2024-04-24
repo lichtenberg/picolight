@@ -155,15 +155,28 @@ void oled_init() {
 #endif
 
 extern const char *build_date;
+static bwbitmap_t *oled_bitmap;
 
-int displayInit() {
+static char banner[32];
+
+int displayInit(const char *name) {
     oled_init();
 
-    bwbitmap_t *bm = bwbm_create(128,32);
-    bwbm_blttext(bm,&font_GACHA_NO_10,0,0," PICOLIGHT ",BWBM_MODE_AND);
-    bwbm_blttext(bm,&font_GACHA_NO_10,0,11,build_date,BWBM_MODE_REPLACE);
+    if (!oled_bitmap) {
+        oled_bitmap = bwbm_create(128,32);
+    }
+
+    snprintf(banner,sizeof(banner)," %s ",name);
+
+    return 0;
+}
+
+int displayUpdate() {
+    bwbm_clear(oled_bitmap);
+    bwbm_blttext(oled_bitmap,&font_GACHA_NO_10,0,0,banner,BWBM_MODE_AND);
+    bwbm_blttext(oled_bitmap,&font_GACHA_NO_10,0,11,build_date,BWBM_MODE_REPLACE);
     
-    oled_send_bitmap(bm);
+    oled_send_bitmap(oled_bitmap);
 
     return 0;
 }
