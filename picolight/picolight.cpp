@@ -48,7 +48,7 @@ int rxstate = STATE_SYNC1;
 unsigned int rxcount = 0;
 uint8_t *rxptr = NULL;
 
-static const char *configName = "PICOLIGHT2";
+static char *configName = (char *) "PICOLIGHT2";
 
 
 #include "picoprotocol.h"
@@ -78,7 +78,8 @@ static xtimer_t blinky_timer;
 static xtimer_t displayUpdateTimer;
 static char blinky_onoff = 0;
 
-#define PIN_LED 25
+#define PIN_LED_PICOLIGHT 25
+#define PIN_LED_PICOLASER 3
 
 
 /*  *********************************************************************
@@ -115,9 +116,36 @@ int8_t stripStack[MAXVSTRIPS];
 #define PORT_B8         13
 
 // Maps the physical channel in the pstrip table to the pin# on the RP2040
-const static uint8_t pinMap[16] = {
+const static uint8_t pinMapLED[16] = {
     PORT_A1, PORT_A2, PORT_A3, PORT_A4, PORT_A5, PORT_A6, PORT_A7, PORT_A8,
     PORT_B1, PORT_B2, PORT_B3, PORT_B4, PORT_B5, PORT_B6, PORT_B7, PORT_B8
+};
+
+
+//
+// This array is for PICOLASER, and maps laser channels to their pins
+//
+
+#define PORT_LASER0     12
+#define PORT_LASER1     13
+#define PORT_LASER2     14
+#define PORT_LASER3     15
+#define PORT_LASER4     16
+#define PORT_LASER5     17
+#define PORT_LASER6     18
+#define PORT_LASER7     19
+#define PORT_LASER8     20
+#define PORT_LASER9     21
+#define PORT_STRIP0     10
+#define PORT_STRIP1     11
+
+
+// Maps the physical channel in the pstrip table to the pin# on the RP2040
+const static uint8_t pinMapLaser[16] = {
+    PORT_LASER0, PORT_LASER1, PORT_LASER2, PORT_LASER3, PORT_LASER4,
+    PORT_LASER5, PORT_LASER6, PORT_LASER7, PORT_LASER8, PORT_LASER9,
+    PORT_STRIP0, PORT_STRIP1,
+    0, 0, 0, 0
 };
 
 //
@@ -125,10 +153,17 @@ const static uint8_t pinMap[16] = {
 // port and pin on the RP2040.
 //
 
+#define STRIPTYPE_LEDS_GRB  0
+#define STRIPTYPE_LEDS_RGB  1
+#define STRIPTYPE_LASER     2
+
+#define LASER_OFF       0
+#define LASER_ON        1
+
 // This struct describes a physical strip
 typedef struct PhysicalStrip_s {
     uint8_t pin;                        // Pin number for strips
-    uint8_t flags;                      // Flags from the script
+    uint8_t type;                       // Type/flag info
     uint16_t length;                    // total # of pixels on strip
     Pico_NeoPixel *neopixels;           // Neopixel object.
 } PhysicalStrip_t;
@@ -188,6 +223,57 @@ AlaPalette alaPalGreen = { 1, alaPalGreen_ };
 AlaColor alaPalBlue_[] = { 0x0000FF };
 AlaPalette alaPalBlue = { 1, alaPalBlue_ };
 
+#define GPIO25_PIN      (25u)
+#define GPIO29_PIN      (29u)
+
+bool PicoIsW = false;
+
+// ad-hoc way to determine if is Pico or is Pico W
+static void CheckPicoBoard(void)
+{
+    enum gpio_function pin25_func;
+    enum gpio_function pin29_func;
+    uint pin25_dir;
+    uint pin29_dir;
+
+    // remember pin directions
+    pin25_dir = gpio_get_dir(GPIO25_PIN);
+    pin29_dir = gpio_get_dir(GPIO29_PIN);
+
+    // remember pin functions
+    pin25_func = gpio_get_function(GPIO25_PIN);
+    pin29_func = gpio_get_function(GPIO25_PIN);
+
+    // activate pins
+    gpio_init(GPIO25_PIN);
+    gpio_init(GPIO29_PIN);
+
+    // activate VSYS input
+    gpio_set_dir(GPIO25_PIN, GPIO_OUT);
+    gpio_put(GPIO25_PIN, 1);
+
+    gpio_set_dir(GPIO29_PIN, GPIO_IN);
+    if (gpio_get(GPIO29_PIN))   // should be high (sort-of, read ADC value better) on both Pico and Pico W
+    {
+        gpio_put(GPIO25_PIN, 0);        // disable VSYS input on Pico W
+        if (!gpio_get(GPIO29_PIN))      // should be low from pull-down on Pico W
+        {
+            PicoIsW = true;             // is Pico W
+        }
+        else
+        {
+            PicoIsW = false;            // is Pico
+        }
+    }
+
+    // restore pin functions
+    gpio_set_function(GPIO25_PIN, pin25_func);
+    gpio_set_function(GPIO29_PIN, pin29_func);
+
+    // restore pin directions
+    gpio_set_dir(GPIO25_PIN, pin25_dir);
+    gpio_set_dir(GPIO29_PIN, pin29_dir);
+}
 
 void pushStrip(int strip)
 {
@@ -295,7 +381,7 @@ static void reset_all(void)
             delete physicalStrips[i].neopixels;
             physicalStrips[i].neopixels = NULL;
             physicalStrips[i].length = 0;
-            physicalStrips[i].flags = 0;
+            physicalStrips[i].type = STRIPTYPE_LEDS_GRB;
             physicalStrips[i].pin = 0;
         }
     }
@@ -319,15 +405,28 @@ static void init_all(void)
     // Walk the physical strip table as uploaded from lightscript and
     // instantiate the real strips.
     for (i = 0; i < MAXPSTRIPS; i++) {
-        if (physicalStrips[i].length != 0) {
-            physicalStrips[i].neopixels =
-                new Pico_NeoPixel(&wsp, physicalStrips[i].pin, physicalStrips[i].length, NEO_GRB);
-            if (!physicalStrips[i].neopixels) {
-                displayInit("ERR1");
-                displayUpdate();
-                printf("Out of memory creating physcial strips\n");
-            }
-            physicalStrips[i].neopixels->begin();
+        PhysicalStrip_t *pstrip = &physicalStrips[i];
+        switch (pstrip->type) {
+            // Initialize a neopixel strip
+            case STRIPTYPE_LEDS_GRB:
+            case STRIPTYPE_LEDS_RGB:
+                if (pstrip->length != 0) {
+                    pstrip->neopixels =
+                        new Pico_NeoPixel(&wsp, pstrip->pin, pstrip->length, NEO_GRB);
+                    if (!pstrip->neopixels) {
+                        displayInit("ERR1");
+                        displayUpdate();
+                        printf("Out of memory creating physcial strips\n");
+                    }
+                    pstrip->neopixels->begin();
+                }
+                break;
+            // initialize a laser
+            case STRIPTYPE_LASER:
+                gpio_init(pstrip->pin);
+                gpio_set_dir(pstrip->pin, GPIO_OUT);
+                gpio_put(pstrip->pin, LASER_OFF);
+                break;
         }
     }
 
@@ -405,8 +504,19 @@ static void init_all(void)
     *  Arduino SETUP routine - perform once-only initialization.
     ********************************************************************* */
 
+static int pin_led = PIN_LED_PICOLIGHT;
+
 void setup()
 {
+    //
+    // Determine what type of RPI Pico board we are (Sets PicoIsW global)
+    //
+
+    CheckPicoBoard();
+
+    pin_led = PicoIsW ? PIN_LED_PICOLASER : PIN_LED_PICOLIGHT;
+    configName = (char *) (PicoIsW ? "PICOLASER" : "PICOLIGHT2");
+    
     //
     // Set up our "timer", which lets us check to see how much time
     // has passed.  We might not use it for much, but it is handy to have.
@@ -416,8 +526,12 @@ void setup()
     TIMER_UPDATE();                 // remember current time
     TIMER_SET(blinky_timer,500);    // set timer for first blink
 
-    gpio_init(PIN_LED);
-    gpio_set_dir(PIN_LED, GPIO_OUT);
+    gpio_init(pin_led);
+    gpio_set_dir(pin_led, GPIO_OUT);
+
+    // testing testing
+    gpio_init(PORT_LASER0);
+    gpio_set_dir(PORT_LASER0, GPIO_OUT);
 
     // Set up the Pico's programmable IO pins.
 
@@ -448,7 +562,8 @@ static void blinky(void)
 {
     if (TIMER_EXPIRED(blinky_timer)) {
         blinky_onoff = !blinky_onoff;
-        gpio_put(PIN_LED, blinky_onoff);
+        gpio_put(pin_led, blinky_onoff);
+        gpio_put(PORT_LASER0, blinky_onoff);
         if (globalState == GSTATE_INIT) {
             TIMER_SET(blinky_timer,500);
         } else {
@@ -618,11 +733,12 @@ static void handleSetPStripMessage(lsmessage_t *msg)
 {
     uint32_t info = msg->info.ls_pstrip.lp_pstrip;
     uint32_t chan = PSTRIP_CHAN(info);
-    uint32_t flags = PSTRIP_TYPE(info);
+    uint32_t type = PSTRIP_TYPE(info);
     uint32_t count = PSTRIP_COUNT(info);
 
-    physicalStrips[chan].pin = pinMap[chan];
-    physicalStrips[chan].flags = flags;
+    physicalStrips[chan].type = STRIPTYPE_LEDS_GRB;
+    physicalStrips[chan].pin = pinMapLED[chan];
+    physicalStrips[chan].type = type;
     physicalStrips[chan].length = count;
 
     sendStatusMessage(0);
@@ -743,8 +859,8 @@ void first_time_idle(void)
         pixels->setPixelColor((uint16_t)i, 10, 10, 10);
     }
 
-    for (i = 0; i < 16; i++) {
-        pixels->setPin(pinMap[i]);
+    for (i = 0; i < MAXPSTRIPS; i++) {
+        pixels->setPin(pinMapLED[i]);
         pixels->show();
     }
 
@@ -769,8 +885,11 @@ void loop()
     checkForMessage();
 
     if (TIMER_EXPIRED(displayUpdateTimer)) {
-        displayInit(configName);
-        displayUpdate();
+        // The PicoLaser always powers the display so we don't need to refresh it.
+        if (!PicoIsW) {
+            displayInit(configName);
+            displayUpdate();
+        }
         TIMER_SET(displayUpdateTimer, 5000);
     }
 
@@ -815,12 +934,19 @@ int main()
     gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
 
+    setup();
+
+    displayInit(configName);
     displayInit(configName);
     displayUpdate();
 
-    setup();
-    first_time_idle();
+    // PicoLaser doesn't yet have an idle startup.
+    if (!PicoIsW) {
+        first_time_idle();
+    }
+
     TIMER_SET(displayUpdateTimer, 5000);
+
     for (;;) {
         loop();
     }
