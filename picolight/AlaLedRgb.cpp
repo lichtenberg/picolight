@@ -49,7 +49,7 @@ AlaLedRgb::~AlaLedRgb()
 }
 
 
-void AlaLedRgb::addSubStrip(int startingLed, int numLeds, bool reverse, Pico_NeoPixel *pixels)
+void AlaLedRgb::addSubStrip(int startingLed, int numLeds, bool reverse, PicoPixel *pixels)
 {
   if (numSubStrips == MAXSUBSTRIPS) {
     return;
@@ -150,7 +150,7 @@ int AlaLedRgb::getAnimation()
     return animation;
 }
 
-bool AlaLedRgb::findPixel(int idx, Pico_NeoPixel **strip, int *whichLed)
+bool AlaLedRgb::findPixel(int idx, PicoPixel **strip, int *whichLed)
 {
     int i;
 
@@ -190,7 +190,7 @@ bool AlaLedRgb::runAnimation()
     {
         // this is not really so smart...
         for(int i=0; i<numLeds; i++) {
-            Pico_NeoPixel *strip;
+            PicoPixel *strip;
             int whichLed;
             // If the direction is backwards, reverse the order that we fill in the pixels
             int ledidx = direction ? (numLeds-1-i) : i;
@@ -278,8 +278,8 @@ void AlaLedRgb::on()
     for(int i=0; i<numLeds; i++)
     {
         leds[i] = palette.colors[0];
+//        leds[i] = 0xFFFFFF;
     }
-//    animation = ALA_STOPSEQ;
 }
 
 void AlaLedRgb::off()

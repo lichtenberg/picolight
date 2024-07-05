@@ -19,6 +19,8 @@
 #ifndef PICO_NEOPIXEL_H
 #define PICO_NEOPIXEL_H
 
+#include "PicoPixel.h"
+
 #include "ws2812.pio.h"
 
 
@@ -86,7 +88,7 @@
 
 typedef uint8_t neoPixelType;
 
-class Pico_NeoPixel {
+class Pico_NeoPixel : public PicoPixel {
 
  public:
 
@@ -97,12 +99,19 @@ class Pico_NeoPixel {
 
     void begin(void);
     void show(void);
-    void setPin(uint8_t p);
+    void setPin(int8_t p);
+    int8_t getPin(void) { return pin; };
     void setPixelColor(uint16_t n, uint8_t r, uint8_t g, uint8_t b);
     void setPixelColor(uint16_t n, uint8_t r, uint8_t g, uint8_t b, uint8_t w);
     void setPixelColor(uint16_t n, uint32_t c);
+    uint32_t getPixelColor(uint16_t n) const;
+    uint32_t Color(uint8_t r, uint8_t g, uint8_t b);
+    uint32_t Color(uint8_t r, uint8_t g, uint8_t b, uint8_t w);
+    uint16_t numPixels(void) const;
     void setBrightness(uint8_t);
     void clear(void);
+
+private:
     void updateLength(uint16_t n);
     void updateType(neoPixelType t);
 
@@ -110,11 +119,6 @@ class Pico_NeoPixel {
     uint8_t getBrightness(void) const;
     uint8_t sine8(uint8_t) const;
     uint8_t gamma8(uint8_t) const;
-    int8_t getPin(void) { return pin; };
-    uint16_t numPixels(void) const;
-    static uint32_t Color(uint8_t r, uint8_t g, uint8_t b);
-    static uint32_t Color(uint8_t r, uint8_t g, uint8_t b, uint8_t w);
-    uint32_t getPixelColor(uint16_t n) const;
     inline bool canShow(void) { return (time_us_64() - endTime) >= 300L; }
 
  protected:

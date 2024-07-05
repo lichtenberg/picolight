@@ -5,6 +5,9 @@
 #define MAXVSTRIPS      128
 #define MAXSUBSTRIPS    8
 
+#define PSTRIP_TYPE_GRB        0
+#define PSTRIP_TYPE_RGB        1
+#define PSTRIP_TYPE_LASER      2
 
 
 // Physical strip encoding, 31 bits:     0TTT PPPP 0000 0000 0000 LLLL LLLL LLLL

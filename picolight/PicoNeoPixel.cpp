@@ -116,7 +116,7 @@ void Pico_NeoPixel::show(void)
 }
 
 // Set the output pin number
-void Pico_NeoPixel::setPin(uint8_t p) {
+void Pico_NeoPixel::setPin(int8_t p) {
     pin = p;
     ws2812_pin_init(wsp, p);
 }

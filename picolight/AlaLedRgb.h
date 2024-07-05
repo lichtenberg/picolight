@@ -3,7 +3,7 @@
 
 #include "Ala.h"
 
-#include "PicoNeoPixel.h"
+#include "PicoPixel.h"
 
 // This represents a piece of a Neopixel Strip.  We can have more than
 // one AlaSubStrip associated with an AlaLedRgb to spread the actual
@@ -12,7 +12,7 @@ typedef struct AlaSubStrip_s {
     int startingLed;
     int numLeds;
     bool reverse;
-    Pico_NeoPixel *pixels;
+    PicoPixel *pixels;
 } AlaSubStrip;
 
 #define MAXSUBSTRIPS 8
@@ -32,7 +32,7 @@ public:
     * Initializes a substrip, adding set of LEDs from a physical strip to this AlaLedRgb
     */
 
-    void addSubStrip(int startingLed, int numLeds, bool reverse, Pico_NeoPixel *pixels);
+    void addSubStrip(int startingLed, int numLeds, bool reverse, PicoPixel *pixels);
     void begin(void);
 
     /**
@@ -142,7 +142,7 @@ private:
     float *pxPos;
     float *pxSpeed;
 
-    bool findPixel(int idx, Pico_NeoPixel **strip, int *whichLed);
+    bool findPixel(int idx, PicoPixel **strip, int *whichLed);
 
 };
 
